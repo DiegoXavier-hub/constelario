@@ -1,0 +1,1061 @@
+<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8">
+<title>Constelário</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--CONSTELARIO:SCRIPTS-->
+<style>
+  :root{
+    --bg:#0a0806; --bg2:#120d09; --panel:#181109; --panel2:#100b06; --stroke:#3a2c17;
+    --strokeSoft:#241a0f; --ink:#ecdfc2; --muted:#9c8a6a; --gold:#d9ad3f; --gold2:#f2c766;
+    --glowA:#1c140a; --glowB:#150f08;
+    --font:'Segoe UI',Inter,sans-serif; --mono:'IBM Plex Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);overflow:hidden;
+    font-family:var(--font)}
+  body{
+    background:
+      radial-gradient(1100px 700px at 22% 18%, var(--glowA) 0%, transparent 60%),
+      radial-gradient(900px 900px at 85% 80%, var(--glowB) 0%, transparent 55%),
+      var(--bg);
+  }
+  code,.mono{font-family:var(--mono)}
+
+  /* ---- topbar ---- */
+  #topbar{position:fixed;top:0;left:0;right:340px;min-height:54px;z-index:5;display:flex;
+    flex-wrap:nowrap;align-items:center;gap:16px;padding:0 18px;
+    background:linear-gradient(color-mix(in srgb,var(--bg2) 93%,transparent),
+      color-mix(in srgb,var(--bg2) 80%,transparent) 70%,transparent);
+    border-bottom:1px solid var(--strokeSoft)}
+  #topbar .brand{font-weight:700;letter-spacing:.3px;font-size:15px;color:var(--gold2);
+    flex:0 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #topbar .brand .sub{color:var(--muted);font-weight:400;font-size:12.5px;margin-left:6px}
+  .seg-group{display:flex;flex:0 0 auto;border:1px solid var(--stroke);border-radius:8px;overflow:hidden}
+  .seg{background:var(--panel2);color:var(--muted);border:0;padding:6px 14px;font-size:12.5px;
+    cursor:pointer;font-family:inherit;letter-spacing:.4px}
+  .seg.active{background:var(--gold);color:#111;font-weight:700}
+  .topctl{display:flex;flex:0 1 auto;min-width:0;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+  .topctl select{background:var(--panel2);color:var(--ink);border:1px solid var(--stroke);
+    border-radius:6px;padding:4px 8px;font-size:12px;font-family:inherit;max-width:100%}
+  .spacer{flex:1 1 auto;min-width:8px}
+  #resetViewBtn,#fsBtn{background:var(--panel2);color:var(--gold2);border:1px solid var(--stroke);
+    border-radius:6px;padding:5px 12px;font-size:12px;cursor:pointer;flex:0 0 auto;white-space:nowrap;
+    font-family:inherit}
+  #resetViewBtn:hover,#fsBtn:hover{border-color:var(--gold)}
+
+  /* ---- stage ---- */
+  #stage{position:absolute;inset:0;right:340px;top:54px}
+  #graph2d,#graph3d{position:absolute;inset:0}
+  #graph2d.hidden,#graph3d.hidden{display:none}
+  #hint{position:absolute;left:16px;bottom:12px;color:var(--muted);font-size:11.5px;z-index:3;
+    background:#00000055;padding:4px 10px;border-radius:6px}
+
+  /* ---- sidebar ---- */
+  #sidebar{position:fixed;top:0;right:0;bottom:0;width:340px;background:var(--panel);
+    border-left:1px solid var(--stroke);overflow-y:auto;z-index:6;padding:14px 14px 90px}
+  #sidebar h3{font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:var(--gold);
+    margin:18px 0 8px;display:flex;align-items:center;justify-content:space-between}
+  #sidebar h3:first-child{margin-top:0}
+  #sidebar .hint-small{color:var(--muted);font-size:10.5px;text-transform:none;letter-spacing:0;font-weight:400}
+
+  #search{width:100%;background:var(--panel2);border:1px solid var(--stroke);border-radius:8px;
+    color:var(--ink);padding:8px 10px;font-size:13px;font-family:inherit}
+  #search:focus{outline:none;border-color:var(--gold)}
+  #search-results{margin-top:4px}
+  .sr-row{padding:6px 8px;border-radius:6px;font-size:12.5px;cursor:pointer;display:flex;
+    justify-content:space-between;gap:6px}
+  .sr-row:hover{background:var(--panel2)}
+  .sr-type{color:var(--muted);font-size:10.5px}
+
+  .empty{color:var(--muted);font-size:12px;font-style:italic}
+
+  .info-head{display:flex;gap:10px;align-items:flex-start}
+  .swatch{width:16px;height:16px;border-radius:50%;flex:0 0 auto;margin-top:2px;
+    box-shadow:0 0 8px 0 currentColor}
+  .info-title{font-weight:700;font-size:14px;line-height:1.3}
+  .info-type{color:var(--muted);font-size:11px}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin:9px 0}
+  .chip{font-size:10.5px;font-family:var(--mono);color:var(--ink);
+    background:var(--panel2);border:1px solid var(--stroke);border-radius:999px;padding:2px 9px}
+  .props{margin:6px 0}
+  .prop-row{display:flex;justify-content:space-between;gap:8px;font-size:11.5px;padding:2.5px 0;
+    border-bottom:1px dashed var(--strokeSoft)}
+  .prop-k{color:var(--muted)}
+  .prop-v{font-family:var(--mono);text-align:right;word-break:break-word}
+  .field-title{font-size:11px;color:var(--muted);margin:10px 0 4px;text-transform:uppercase;
+    letter-spacing:1px}
+  .neighbors,.sims{max-height:180px;overflow-y:auto;border:1px solid var(--strokeSoft);
+    border-radius:8px;background:var(--panel2)}
+  .nb-row,.sim-row{padding:6px 9px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--strokeSoft)}
+  .nb-row:last-child,.sim-row:last-child{border-bottom:0}
+  .nb-row:hover,.sim-row:hover{background:color-mix(in srgb,var(--panel2) 60%,var(--stroke))}
+  .nb-rel{color:var(--gold2);font-family:var(--mono);font-size:10px;margin-right:5px}
+  .sim-score{float:right;color:var(--gold2);font-family:var(--mono)}
+  .isolate-btn{margin-top:10px;margin-right:6px;background:var(--panel2);color:var(--gold2);
+    border:1px solid var(--stroke);border-radius:7px;padding:6px 12px;font-size:11.5px;cursor:pointer;
+    font-family:inherit}
+  .isolate-btn:hover{border-color:var(--gold)}
+  .isolate-btn.ghost{color:var(--muted)}
+
+  .legend-row{display:flex;align-items:center;gap:8px;padding:4px 2px;font-size:12.5px;cursor:pointer}
+  .legend-row .dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto}
+  .legend-row .lname{flex:1}
+  .legend-row .lcount{color:var(--muted);font-family:var(--mono);font-size:11px}
+  #legend-controls label{font-size:11px;color:var(--muted);display:flex;gap:5px;align-items:center;cursor:pointer}
+
+  /* ---- seletor de organização espacial ---- */
+  #layout-picker{display:flex;flex-direction:column;gap:4px}
+  .lay-opt{padding:7px 11px;border-radius:8px;border:1px solid transparent;cursor:pointer;
+    transition:background .12s,border-color .12s}
+  .lay-opt:hover{background:var(--panel2);border-color:var(--strokeSoft)}
+  .lay-opt b{display:block;font-size:12.5px;font-weight:600;color:var(--muted)}
+  .lay-opt span{font-size:11px;color:color-mix(in srgb,var(--muted) 70%,var(--bg))}
+  .lay-opt.active{background:linear-gradient(90deg,color-mix(in srgb,var(--gold) 16%,var(--panel2)),var(--panel2));
+    border-color:var(--stroke);box-shadow:inset 2px 0 0 0 var(--gold)}
+  .lay-opt.active b{color:var(--gold2)}
+  .lay-opt.active span{color:var(--muted)}
+
+  .rank-row{display:flex;justify-content:space-between;gap:6px;padding:5px 2px;font-size:12px;
+    cursor:pointer;border-bottom:1px solid var(--strokeSoft)}
+  .rank-row.static{cursor:default}
+  .rank-row:not(.static):hover{color:var(--gold2)}
+  .rank-val{font-family:var(--mono);color:var(--muted)}
+  .comm-row{display:flex;align-items:center;gap:8px;padding:5px 2px;font-size:12px;cursor:pointer;
+    border-bottom:1px solid var(--strokeSoft)}
+  .comm-row .dot{width:10px;height:10px;border-radius:50%}
+  .comm-row .csize{margin-left:auto;color:var(--muted);font-family:var(--mono)}
+
+  #stats{position:sticky;bottom:-14px;margin-top:16px;padding:10px 12px;background:var(--panel2);
+    border:1px solid var(--stroke);border-radius:9px;font-size:11.5px;color:var(--muted);
+    font-family:var(--mono);line-height:1.7}
+  #stats b{color:var(--ink)}
+
+  /* ---- tela cheia: topbar some, sidebar vira auto-hide (estilo taskbar
+     oculta do Windows). Uma tira fina na borda direita reabre o painel. ---- */
+  body.is-fullscreen #topbar{display:none}
+  body.is-fullscreen #stage{right:0;top:0}
+  body.is-fullscreen #sidebar{
+    transform:translateX(100%);
+    transition:transform .22s ease;
+    box-shadow:-22px 0 44px -14px #000c;
+  }
+  body.is-fullscreen #sidebar.revealed{transform:translateX(0)}
+  body.is-fullscreen #sidebar::before{
+    content:'';position:fixed;right:0;top:0;bottom:0;width:5px;z-index:7;
+    background:linear-gradient(180deg,var(--gold),var(--gold2));
+    box-shadow:0 0 12px 1px color-mix(in srgb,var(--gold) 40%,transparent);pointer-events:none;
+  }
+  body.is-fullscreen #sidebar.revealed::before{opacity:0}
+  #fsExit{display:none}
+  body.is-fullscreen #fsExit{
+    display:block;position:fixed;top:12px;left:12px;z-index:8;
+    background:color-mix(in srgb,var(--bg2) 80%,transparent);color:var(--gold2);
+    border:1px solid var(--stroke);border-radius:8px;padding:6px 12px;font-size:12px;
+    cursor:pointer;font-family:inherit;backdrop-filter:blur(4px)}
+  #fsExit:hover{border-color:var(--gold)}
+  #fsSeg{display:none}
+  body.is-fullscreen #fsSeg{
+    display:flex;position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:8;
+    background:color-mix(in srgb,var(--bg2) 80%,transparent);backdrop-filter:blur(4px);
+    box-shadow:0 4px 18px -8px #000c}
+
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:var(--stroke);border-radius:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <div class="brand"><span id="brand-title"></span><span class="sub" id="brand-sub"></span></div>
+  <div class="seg-group">
+    <button class="seg active" id="btn2d">2D</button>
+    <button class="seg" id="btn3d">3D</button>
+  </div>
+  <div class="topctl">
+    <span id="color-by-label"></span>
+    <select id="colorMode"></select>
+  </div>
+  <div class="spacer"></div>
+  <button id="fsBtn"></button>
+  <button id="resetViewBtn"></button>
+</div>
+
+<button id="fsExit"></button>
+<div id="fsSeg" class="seg-group" title="2D / 3D">
+  <button class="seg active" id="fsBtn2d">2D</button>
+  <button class="seg" id="fsBtn3d">3D</button>
+</div>
+
+<div id="stage">
+  <div id="graph2d"></div>
+  <div id="graph3d" class="hidden"></div>
+  <div id="hint"></div>
+</div>
+
+<div id="sidebar">
+  <div id="sb-search">
+    <h3 id="search-title"></h3>
+    <input id="search" type="text" autocomplete="off">
+    <div id="search-results"></div>
+  </div>
+
+  <div id="sb-layouts">
+    <h3 id="layout-title"></h3>
+    <div id="layout-picker"></div>
+  </div>
+
+  <div id="sb-inspect">
+    <h3><span id="inspect-title"></span> <span class="hint-small" id="inspect-hint"></span></h3>
+    <div id="info-content"></div>
+  </div>
+
+  <div id="sb-legend">
+    <h3><span id="legend-title"></span> <span id="legend-controls"><label><input type="checkbox" id="select-all-cb" checked><span id="legend-all"></span></label></span></h3>
+    <div id="legend"></div>
+  </div>
+
+  <div id="sb-panels"></div>
+
+  <div id="sb-communities">
+    <h3><span id="communities-title"></span> <span class="hint-small" id="communities-hint"></span></h3>
+    <div id="top-communities"></div>
+  </div>
+
+  <div id="stats"></div>
+</div>
+
+<script id="constelario-config" type="application/json">
+{}
+</script>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------
+  // Configuração (gerada pelo Python) e utilitários
+  // ---------------------------------------------------------------------
+  const CFG = JSON.parse(document.getElementById('constelario-config').textContent);
+  const S = CFG.strings, TYPES = CFG.types, ICONS = CFG.icons, UI = CFG.ui;
+  const DATA = { nodes: CFG.nodes, links: CFG.links };
+  const nodeById = {}; DATA.nodes.forEach(n => nodeById[n.id] = n);
+  const PALETTE = CFG.theme.palette;
+
+  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function typeOf(n) { return TYPES[n.type] || { label: n.type, color: '#8a7a5c', icon: 'dot', tier: 'small', ring: 5, hidden: false }; }
+  function typeLabel(t) { return TYPES[t] ? TYPES[t].label : t; }
+  function hashId(str) { let h = 0; for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) | 0; return Math.abs(h); }
+  function shortLabel(n) { const l = n.label || n.id; return l.length > 26 ? l.slice(0, 24) + '…' : l; }
+
+  // Tema -> variáveis CSS
+  (function applyTheme() {
+    const t = CFG.theme, r = document.documentElement.style;
+    const map = { bg: '--bg', bg2: '--bg2', panel: '--panel', panel2: '--panel2',
+      stroke: '--stroke', strokeSoft: '--strokeSoft', ink: '--ink', muted: '--muted',
+      gold: '--gold', gold2: '--gold2', glowA: '--glowA', glowB: '--glowB',
+      font: '--font', mono: '--mono' };
+    Object.keys(map).forEach(k => { if (t[k]) r.setProperty(map[k], t[k]); });
+    document.title = CFG.meta.title + (CFG.meta.subtitle ? ' — ' + CFG.meta.subtitle : '');
+  })();
+
+  // Textos fixos da interface
+  document.getElementById('brand-title').textContent = CFG.meta.title;
+  document.getElementById('brand-sub').textContent = CFG.meta.subtitle ? ' ' + CFG.meta.subtitle : '';
+  document.getElementById('color-by-label').textContent = S.color_by;
+  document.getElementById('fsBtn').textContent = S.btn_fullscreen;
+  document.getElementById('fsExit').textContent = S.btn_fullscreen_exit;
+  document.getElementById('resetViewBtn').textContent = S.btn_reset;
+  document.getElementById('hint').textContent = UI.hint || S.hint_stage;
+  document.getElementById('search-title').textContent = S.search_title;
+  document.getElementById('search').placeholder = S.search_placeholder;
+  document.getElementById('layout-title').textContent = S.layout_title;
+  document.getElementById('inspect-title').textContent = S.inspect_title;
+  document.getElementById('inspect-hint').textContent = S.inspect_hint;
+  document.getElementById('info-content').innerHTML = `<span class="empty">${escapeHtml(S.inspect_empty)}</span>`;
+  document.getElementById('legend-title').textContent = S.legend_title;
+  document.getElementById('legend-all').textContent = S.legend_all;
+  document.getElementById('communities-title').textContent = S.communities_title;
+  document.getElementById('communities-hint').textContent = S.communities_hint;
+
+  // Blocos opcionais da sidebar
+  function hideIf(off, id) { if (off) document.getElementById(id).style.display = 'none'; }
+  hideIf(!UI.search, 'sb-search');
+  hideIf(!UI.legend, 'sb-legend');
+  hideIf(!UI.inspector, 'sb-inspect');
+  hideIf(!UI.stats, 'stats');
+  hideIf(!UI.fullscreen, 'fsBtn');
+  const anyCommunity = DATA.nodes.some(n => n.community !== null && n.community !== undefined);
+  hideIf(!(UI.communities_panel && anyCommunity), 'sb-communities');
+  hideIf(CFG.layouts.enabled.length < 2, 'sb-layouts');
+
+  // ---------------------------------------------------------------------
+  // Grau (tamanho do nó proporcional às arestas; node.size sobrepõe)
+  // ---------------------------------------------------------------------
+  const degree = {};
+  DATA.nodes.forEach(n => degree[n.id] = 0);
+  DATA.links.forEach(l => { degree[l.source] = (degree[l.source] || 0) + 1;
+                             degree[l.target] = (degree[l.target] || 0) + 1; });
+  const maxDegree = Math.max(1, ...Object.values(degree));
+  function nodeSize(id) {
+    const n = nodeById[id];
+    if (n && n.size != null) return n.size;
+    const MIN = CFG.node_size.min, MAX = CFG.node_size.max;
+    return MIN + Math.sqrt((degree[id] || 0) / maxDegree) * (MAX - MIN);
+  }
+
+  // ---------------------------------------------------------------------
+  // Cor por comunidade: greedy coloring no grafo de adjacência entre
+  // comunidades -- vizinhas nunca recebem a mesma cor.
+  // ---------------------------------------------------------------------
+  const idCommunity = {};
+  DATA.nodes.forEach(n => { if (n.community !== null && n.community !== undefined) idCommunity[n.id] = n.community; });
+  const communityColor = (function () {
+    const sizes = {};
+    Object.values(idCommunity).forEach(c => sizes[c] = (sizes[c] || 0) + 1);
+    const ids = Object.keys(sizes);
+    const adj = {}; ids.forEach(c => adj[c] = new Set());
+    DATA.links.forEach(l => {
+      const ca = idCommunity[l.source], cb = idCommunity[l.target];
+      if (ca !== undefined && cb !== undefined && ca !== cb) { adj[ca].add(cb); adj[cb].add(ca); }
+    });
+    const order = ids.slice().sort((a, b) => sizes[b] - sizes[a]);
+    const colorIdx = {};
+    order.forEach(c => {
+      const used = new Set();
+      adj[c].forEach(nb => { if (colorIdx[nb] !== undefined) used.add(colorIdx[nb]); });
+      let idx = 0; while (used.has(idx)) idx++;
+      colorIdx[c] = idx;
+    });
+    const out = {};
+    ids.forEach(c => out[c] = PALETTE[colorIdx[c] % PALETTE.length]);
+    return out;
+  })();
+
+  // Modos de cor por propriedade: valores sem cor explícita ganham cores da
+  // paleta na ordem em que aparecem nos nós.
+  CFG.color_modes.forEach(mode => {
+    const assigned = Object.assign({}, mode.colors);
+    let next = 0;
+    DATA.nodes.forEach(n => {
+      const v = n.props ? n.props[mode.prop] : undefined;
+      if (v === undefined || v === null) return;
+      const key = String(v);
+      if (!(key in assigned)) assigned[key] = PALETTE[next++ % PALETTE.length];
+    });
+    mode._resolved = assigned;
+  });
+
+  let colorMode = 'type';
+  function nodeColor(n) {
+    if (colorMode === 'community') {
+      const c = idCommunity[n.id];
+      if (c !== undefined) return communityColor[c];
+      return n.color || typeOf(n).color;
+    }
+    const custom = CFG.color_modes.find(m => m.key === colorMode);
+    if (custom) {
+      const v = n.props ? n.props[custom.prop] : undefined;
+      if (v !== undefined && v !== null && custom._resolved[String(v)]) return custom._resolved[String(v)];
+      return custom.fallback;
+    }
+    return n.color || typeOf(n).color;
+  }
+
+  function edgeStyleOf(l) {
+    const base = CFG.edge_styles['default'];
+    const st = CFG.edge_styles[l.type];
+    return st ? Object.assign({}, base, st) : base;
+  }
+  function edgeColor(l) {
+    if (colorMode === 'community') {
+      const ca = idCommunity[l.source], cb = idCommunity[l.target];
+      if (ca !== undefined && ca === cb) return communityColor[ca];
+    }
+    return edgeStyleOf(l).color;
+  }
+
+  // ---------------------------------------------------------------------
+  // Medalhões (estilo árvore de habilidades): soquete escuro com gradiente,
+  // aro gravado conforme o tier, cravos, anel na cor do nó e glifo em relevo.
+  // ---------------------------------------------------------------------
+  function hexToRgb(hex) {
+    if (hex[0] !== '#') return [138, 122, 92];
+    let h = hex.slice(1);
+    if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    const n = parseInt(h, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  }
+  function darken(hex, amt) { const [r, g, b] = hexToRgb(hex); const f = c => Math.round(c * (1 - amt)); return `rgb(${f(r)},${f(g)},${f(b)})`; }
+  function lighten(hex, amt) { const [r, g, b] = hexToRgb(hex); const f = c => Math.round(c + (255 - c) * amt); return `rgb(${f(r)},${f(g)},${f(b)})`; }
+
+  const RIM = { keystone: null, notable: null, small: null };
+  (function () {
+    const gold = CFG.theme.gold, gold2 = CFG.theme.gold2;
+    RIM.keystone = { color: gold2, w: 3, studs: 8, ticks: 24 };
+    RIM.notable = { color: gold, w: 2.4, studs: 4, ticks: 24 };
+    RIM.small = { color: darken(gold, 0.35), w: 1.8, studs: 0, ticks: 16 };
+  })();
+
+  function iconKeyFor(n) { return n.icon || typeOf(n).icon || 'dot'; }
+  const iconUriCache = new Map();
+  function iconDataUri(n) {
+    const key = iconKeyFor(n), accent = nodeColor(n), tier = typeOf(n).tier;
+    const cacheKey = key + '|' + accent + '|' + tier;
+    if (iconUriCache.has(cacheKey)) return iconUriCache.get(cacheKey);
+    const SZ = 128, C = SZ / 2, rim = RIM[tier] || RIM.small;
+    let deco = '';
+    for (let i = 0; i < rim.ticks; i++) {
+      const a = (i / rim.ticks) * 2 * Math.PI;
+      deco += `<line x1="${(C + 53 * Math.cos(a)).toFixed(1)}" y1="${(C + 53 * Math.sin(a)).toFixed(1)}" ` +
+        `x2="${(C + 57 * Math.cos(a)).toFixed(1)}" y2="${(C + 57 * Math.sin(a)).toFixed(1)}" ` +
+        `stroke="${rim.color}" stroke-width="1" opacity="0.3"/>`;
+    }
+    for (let i = 0; i < rim.studs; i++) {
+      const a = (i / rim.studs) * 2 * Math.PI - Math.PI / 2;
+      deco += `<rect x="-3.4" y="-3.4" width="6.8" height="6.8" fill="${rim.color}" stroke="#111" stroke-width="1" ` +
+        `transform="translate(${(C + 58 * Math.cos(a)).toFixed(1)},${(C + 58 * Math.sin(a)).toFixed(1)}) rotate(45)"/>`;
+    }
+    const g = ICONS[key] || ICONS['dot'];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SZ}" height="${SZ}" viewBox="0 0 ${SZ} ${SZ}">` +
+      `<defs><radialGradient id="g" cx="50%" cy="42%" r="64%">` +
+      `<stop offset="0%" stop-color="${darken(accent, 0.45)}"/>` +
+      `<stop offset="55%" stop-color="${darken(accent, 0.74)}"/>` +
+      `<stop offset="100%" stop-color="#0b0805"/></radialGradient></defs>` +
+      `<circle cx="${C}" cy="${C}" r="${C - 3}" fill="url(#g)"/>` +
+      `<circle cx="${C}" cy="${C}" r="${C - 3}" fill="none" stroke="#181008" stroke-width="4.6"/>` +
+      `<circle cx="${C}" cy="${C}" r="${C - 6}" fill="none" stroke="${rim.color}" stroke-width="${rim.w}"/>` +
+      `<circle cx="${C}" cy="${C}" r="${C - 1.2}" fill="none" stroke="${rim.color}" stroke-width="1" opacity="0.55"/>` +
+      deco +
+      `<circle cx="${C}" cy="${C}" r="46" fill="none" stroke="${accent}" stroke-width="3.4" opacity="0.28"/>` +
+      `<circle cx="${C}" cy="${C}" r="46" fill="none" stroke="${lighten(accent, 0.35)}" stroke-width="1.3" opacity="0.9"/>` +
+      `<ellipse cx="${C}" cy="${C - 26}" rx="34" ry="15" fill="#fff" opacity="0.05"/>` +
+      `<g transform="translate(34,34) scale(2.5)" fill="none" stroke="#0d0905" stroke-width="2.9" stroke-linecap="round" stroke-linejoin="round" opacity="0.6">${g}</g>` +
+      `<g transform="translate(33,33) scale(2.5)" fill="none" stroke="${lighten(accent, 0.55)}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${g}</g></svg>`;
+    const uri = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    iconUriCache.set(cacheKey, uri);
+    return uri;
+  }
+
+  // ---------------------------------------------------------------------
+  // Layouts (todos determinísticos; posicionam TODOS os nós)
+  // ---------------------------------------------------------------------
+  const GA = Math.PI * (3 - Math.sqrt(5)); // ângulo áureo
+  function ringOf(n) { const r = typeOf(n).ring; return r != null ? r : 5; }
+  function communityKeyOf(n) { const c = idCommunity[n.id]; return c !== undefined ? 'c' + c : 't' + n.type; }
+  function hubOrder(a, b) {
+    return ringOf(a) - ringOf(b) || (degree[b.id] || 0) - (degree[a.id] || 0);
+  }
+
+  // Constelação: anéis concêntricos por tipo; dentro do anel, nós agrupados
+  // por comunidade em arcos, com jitter determinístico pra leitura orgânica.
+  function buildConstellation() {
+    const byRing = {};
+    DATA.nodes.forEach(n => { const r = ringOf(n); (byRing[r] = byRing[r] || []).push(n); });
+    const RING_UNIT_2D = 118, RING_UNIT_3D = 92;
+    const p2 = {}, p3 = {};
+    Object.keys(byRing).forEach(rk => {
+      const ring = parseFloat(rk);
+      const members = byRing[rk].slice().sort((a, b) => {
+        const ka = communityKeyOf(a), kb = communityKeyOf(b);
+        return ka < kb ? -1 : ka > kb ? 1 : (a.label < b.label ? -1 : 1);
+      });
+      members.forEach((n, i) => {
+        const ang = (i / members.length) * 2 * Math.PI;
+        const jitterAmt = ring < 1 ? 0 : 16 + ring * 7;
+        const jx = ((hashId(n.id + 'x') % 1000) / 1000 - 0.5) * jitterAmt;
+        const jy = ((hashId(n.id + 'y') % 1000) / 1000 - 0.5) * jitterAmt;
+        const r2 = ring * RING_UNIT_2D;
+        p2[n.id] = { x: r2 * Math.cos(ang) + jx, y: r2 * Math.sin(ang) + jy };
+        const r3 = ring * RING_UNIT_3D;
+        const zSpread = ring < 1 ? 0 : 30 + ring * 14;
+        const z = ((hashId(n.id) % 200) - 100) / 100 * zSpread;
+        p3[n.id] = { x: r3 * Math.cos(ang) + jx * 0.8, y: r3 * Math.sin(ang) + jy * 0.8, z: z };
+      });
+    });
+    return { p2, p3 };
+  }
+
+  // Comunidades: um disco phyllotaxis (2D) / esfera (3D) por comunidade,
+  // com folga entre os grupos; hubs no centro de cada grupo.
+  function buildCommunitiesLayout() {
+    const buckets = {};
+    DATA.nodes.forEach(n => { const k = communityKeyOf(n); (buckets[k] = buckets[k] || []).push(n); });
+    const clusters = Object.keys(buckets).map(k => ({ key: k, members: buckets[k].slice().sort(hubOrder) }));
+    clusters.sort((a, b) => b.members.length - a.members.length);
+    const GAP = 110;
+    clusters.forEach(c => {
+      c.R2 = Math.max(70, 20 * Math.sqrt(c.members.length));
+      c.R3 = Math.max(55, 30 * Math.cbrt(c.members.length));
+    });
+    clusters.forEach((c, i) => {
+      if (i === 0) { c.cx = 0; c.cy = 0; return; }
+      const ang = i * GA;
+      let d = clusters[0].R2 + c.R2 + GAP;
+      for (;;) {
+        const x = d * Math.cos(ang), y = d * Math.sin(ang);
+        let ok = true;
+        for (let j = 0; j < i; j++) {
+          const p = clusters[j];
+          if (Math.hypot(x - p.cx, y - p.cy) < p.R2 + c.R2 + GAP) { ok = false; break; }
+        }
+        if (ok) { c.cx = x; c.cy = y; break; }
+        d += 26;
+      }
+    });
+    const K = clusters.length;
+    const maxR3 = Math.max.apply(null, clusters.map(c => c.R3));
+    const RS = Math.max(320, (2 * maxR3 + 130) * Math.sqrt(Math.max(1, K)) / 3.6);
+    const p2 = {}, p3 = {};
+    clusters.forEach((c, i) => {
+      let cx3 = 0, cy3 = 0, cz3 = 0;
+      if (K > 1) {
+        const z = 1 - 2 * ((i + 0.5) / K), rxy = Math.sqrt(Math.max(0, 1 - z * z)), th = i * GA;
+        cx3 = RS * rxy * Math.cos(th); cy3 = RS * rxy * Math.sin(th); cz3 = RS * z;
+      }
+      const m = c.members.length, spin = (hashId(c.key) % 628) / 100;
+      c.members.forEach((n, j) => {
+        const r2 = c.R2 * Math.sqrt((j + 0.5) / m), th2 = j * GA + spin;
+        p2[n.id] = { x: c.cx + r2 * Math.cos(th2), y: c.cy + r2 * Math.sin(th2) };
+        const z = 1 - 2 * ((j + 0.5) / m), rxy = Math.sqrt(Math.max(0, 1 - z * z)), th3 = j * GA + spin;
+        const rr = c.R3 * Math.cbrt((j + 0.5) / m);
+        p3[n.id] = { x: cx3 + rr * rxy * Math.cos(th3), y: cy3 + rr * rxy * Math.sin(th3), z: cz3 + rr * z };
+      });
+    });
+    return { p2, p3 };
+  }
+
+  // Camadas: colunas por tipo (ordem = ring), fluxo esquerda -> direita;
+  // no 3D cada tipo vira um disco num plano paralelo.
+  function buildLayersLayout() {
+    const names = Object.keys(TYPES).sort((a, b) =>
+      (TYPES[a].ring - TYPES[b].ring) || (a < b ? -1 : 1));
+    const byType = {};
+    DATA.nodes.forEach(n => (byType[n.type] = byType[n.type] || []).push(n));
+    const layers = names.filter(t => byType[t] && byType[t].length)
+      .concat(Object.keys(byType).filter(t => !(t in TYPES)));
+    const SP = 36, LGAP = 260;
+    let cursor = 0; const info = [];
+    layers.forEach(t => {
+      const ms = byType[t].slice().sort((a, b) => {
+        const ca = idCommunity[a.id] !== undefined ? idCommunity[a.id] : -1;
+        const cb = idCommunity[b.id] !== undefined ? idCommunity[b.id] : -1;
+        return ca - cb || (degree[b.id] || 0) - (degree[a.id] || 0);
+      });
+      const m = ms.length;
+      const rows = Math.max(1, Math.min(m, Math.ceil(Math.sqrt(m * 2.6))));
+      const cols = Math.ceil(m / rows);
+      const width = (cols - 1) * SP;
+      info.push({ ms, rows, cols, x: cursor + width / 2 });
+      cursor += width + LGAP;
+    });
+    const totalW = Math.max(1, cursor - LGAP);
+    const p2 = {}, p3 = {};
+    info.forEach(L => {
+      const m = L.ms.length, R = Math.max(60, 18 * Math.sqrt(m));
+      L.ms.forEach((n, j) => {
+        const col = Math.floor(j / L.rows), row = j % L.rows;
+        p2[n.id] = {
+          x: L.x - totalW / 2 + (col - (L.cols - 1) / 2) * SP,
+          y: (row - (L.rows - 1) / 2) * SP + (col % 2 ? SP / 2 : 0),
+        };
+        const r = R * Math.sqrt((j + 0.5) / m), th = j * GA;
+        p3[n.id] = { x: (L.x - totalW / 2) * 0.85, y: r * Math.cos(th), z: r * Math.sin(th) };
+      });
+    });
+    return { p2, p3 };
+  }
+
+  // Espiral áurea (2D) / globo de Fibonacci (3D). Tipos ocultos por padrão
+  // (a "massa" do grafo) vão para um halo/casca externa própria.
+  function buildSpiralLayout() {
+    const groups = {};
+    DATA.nodes.forEach(n => { const k = communityKeyOf(n); (groups[k] = groups[k] || []).push(n); });
+    const gkeys = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+    const core = [], halo = [];
+    gkeys.forEach(k => {
+      groups[k].sort(hubOrder);
+      groups[k].forEach(n => (typeOf(n).hidden ? halo : core).push(n));
+    });
+    const p2 = {}, p3 = {};
+    const NC = Math.max(1, core.length);
+    const RS = Math.max(430, 15 * Math.sqrt(NC));
+    core.forEach((n, k) => {
+      const th = k * GA, r = 27 * Math.sqrt(k + 0.5);
+      p2[n.id] = { x: r * Math.cos(th), y: r * Math.sin(th) };
+      const z = 1 - 2 * ((k + 0.5) / NC), rxy = Math.sqrt(Math.max(0, 1 - z * z));
+      p3[n.id] = { x: RS * rxy * Math.cos(th), y: RS * rxy * Math.sin(th), z: RS * z };
+    });
+    const NH = Math.max(1, halo.length);
+    const coreR = 27 * Math.sqrt(NC + 0.5);
+    const RH = RS + Math.max(120, 5.5 * Math.sqrt(NH));
+    halo.forEach((n, k) => {
+      const th = k * GA, r = coreR + 90 + 16 * Math.sqrt(k + 0.5);
+      p2[n.id] = { x: r * Math.cos(th), y: r * Math.sin(th) };
+      const z = 1 - 2 * ((k + 0.5) / NH), rxy = Math.sqrt(Math.max(0, 1 - z * z));
+      p3[n.id] = { x: RH * rxy * Math.cos(th), y: RH * rxy * Math.sin(th), z: RH * z };
+    });
+    return { p2, p3 };
+  }
+
+  const LAYOUT_BUILDERS = { constel: buildConstellation, communities: buildCommunitiesLayout,
+    layers: buildLayersLayout, spiral: buildSpiralLayout };
+  const layoutCache = {};
+  let layoutMode = CFG.layouts.default;
+  function activeLayout() {
+    if (!layoutCache[layoutMode]) layoutCache[layoutMode] = LAYOUT_BUILDERS[layoutMode]();
+    return layoutCache[layoutMode];
+  }
+  function P2() { return activeLayout().p2; }
+  function P3() { return activeLayout().p3; }
+
+  // ---------------------------------------------------------------------
+  // Filtro (tipos escondidos via legenda + isolar vizinhança)
+  // ---------------------------------------------------------------------
+  const hiddenTypes = new Set(Object.keys(TYPES).filter(t => TYPES[t].hidden));
+  let isolateId = null;
+
+  function visibleNodeIds() {
+    let ids = DATA.nodes.filter(n => !hiddenTypes.has(n.type)).map(n => n.id);
+    if (isolateId) {
+      const keep = new Set([isolateId]);
+      DATA.links.forEach(l => { if (l.source === isolateId) keep.add(l.target);
+                                 if (l.target === isolateId) keep.add(l.source); });
+      ids = ids.filter(id => keep.has(id));
+    }
+    return new Set(ids);
+  }
+  function currentDataset() {
+    const vis = visibleNodeIds();
+    return { nodes: DATA.nodes.filter(n => vis.has(n.id)),
+             links: DATA.links.filter(l => vis.has(l.source) && vis.has(l.target)) };
+  }
+
+  // ---------------------------------------------------------------------
+  // Render 2D (vis-network)
+  // ---------------------------------------------------------------------
+  const container2d = document.getElementById('graph2d');
+  let network = null;
+
+  function renderVis() {
+    const { nodes, links } = currentDataset();
+    const pos = P2();
+    const visNodes = nodes.map(n => {
+      const p = pos[n.id] || { x: 0, y: 0 };
+      const col = nodeColor(n), tier = typeOf(n).tier;
+      return {
+        id: n.id, shape: 'circularImage', image: iconDataUri(n), size: nodeSize(n.id),
+        title: `${n.label} · ${typeLabel(n.type)}`,
+        color: { border: col, highlight: { border: CFG.theme.gold2 }, hover: { border: CFG.theme.gold2 } },
+        borderWidth: tier === 'keystone' ? 4.5 : tier === 'notable' ? 2.6 : 1.2,
+        shadow: tier !== 'small' ? { enabled: true, color: col, size: 16, x: 0, y: 0 } : false,
+        x: p.x, y: p.y, fixed: { x: true, y: true }, physics: false,
+      };
+    });
+    const visEdges = links.map(l => {
+      const st = edgeStyleOf(l);
+      return {
+        from: l.source, to: l.target,
+        color: { color: edgeColor(l), opacity: st.opacity, highlight: CFG.theme.gold2, hover: CFG.theme.gold2 },
+        width: st.width, dashes: !!st.dashes,
+        smooth: { type: 'continuous', roundness: 0.25 },
+      };
+    });
+    if (!network) {
+      network = new vis.Network(container2d, { nodes: new vis.DataSet(visNodes), edges: new vis.DataSet(visEdges) }, {
+        physics: { enabled: false },
+        interaction: { hover: true, tooltipDelay: 120, dragView: true, zoomView: true },
+        layout: { improvedLayout: false },
+      });
+      network.on('click', params => { if (params.nodes.length) showNodeInfo(params.nodes[0]); });
+      network.once('afterDrawing', () => network.fit({ animation: false }));
+    } else {
+      network.setData({ nodes: new vis.DataSet(visNodes), edges: new vis.DataSet(visEdges) });
+    }
+  }
+
+  function focusNode2D(id) {
+    if (!network) return;
+    network.selectNodes([id]);
+    network.focus(id, { scale: 1.3, animation: { duration: 500, easingFunction: 'easeInOutQuad' } });
+  }
+
+  // ---------------------------------------------------------------------
+  // Render 3D (3d-force-graph + sprites-medalhão via three)
+  // ---------------------------------------------------------------------
+  let graph3d = null;
+  const container3d = document.getElementById('graph3d');
+
+  function ensure3D() {
+    if (graph3d) return;
+    graph3d = ForceGraph3D()(container3d)
+      .backgroundColor(CFG.theme.bg)
+      .nodeId('id')
+      .nodeLabel(n => `${shortLabel(n)} · ${typeLabel(n.type)}`)
+      .nodeVal(n => Math.max(1, nodeSize(n.id) / 6))
+      .nodeColor(n => nodeColor(n))
+      .linkColor(l => edgeColor(l))
+      .linkOpacity(0.35)
+      .linkWidth(l => Math.max(0.2, edgeStyleOf(l).width * 0.6))
+      .cooldownTicks(0)
+      .onNodeClick(n => { showNodeInfo(n.id); focusNode3D(n); })
+      .onNodeHover(n => { container3d.style.cursor = n ? 'pointer' : 'default'; });
+    applyMedallionSprites();
+    graph3d.cameraPosition({ x: 0, y: 0, z: 1100 });
+    sizeGraph3D();
+  }
+
+  // O three chega assíncrono (module/blob). Esta função é idempotente e
+  // reaplicada no evento 'three-ready' caso o usuário abra o 3D cedo demais.
+  let sprites3dApplied = false;
+  function applyMedallionSprites() {
+    if (sprites3dApplied || !graph3d || typeof window.THREE === 'undefined') return;
+    sprites3dApplied = true;
+    const THREE = window.THREE;
+    const texLoader = new THREE.TextureLoader();
+    graph3d.nodeThreeObject(n => {
+      const tex = texLoader.load(iconDataUri(n));
+      if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+      const s = Math.max(6, nodeSize(n.id)) * 1.7;
+      sprite.scale.set(s, s, 1);
+      return sprite;
+    }).nodeThreeObjectExtend(false);
+  }
+  window.addEventListener('three-ready', () => { applyMedallionSprites(); });
+
+  const stageEl = document.getElementById('stage');
+  function sizeGraph3D() {
+    if (!graph3d) return;
+    const w = container3d.clientWidth || stageEl.clientWidth;
+    const h = container3d.clientHeight || stageEl.clientHeight;
+    if (w > 0 && h > 0) graph3d.width(w).height(h);
+  }
+  function onStageResize() {
+    if (network) { network.setSize('100%', '100%'); network.redraw(); }
+    sizeGraph3D();
+  }
+  window.addEventListener('resize', onStageResize);
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(onStageResize).observe(stageEl);
+
+  function renderGraph3D() {
+    ensure3D();
+    applyMedallionSprites();
+    const { nodes, links } = currentDataset();
+    const P = P3();
+    const nodes3 = nodes.map(n => { const p = P[n.id] || { x: 0, y: 0, z: 0 };
+      return Object.assign({}, n, p, { fx: p.x, fy: p.y, fz: p.z }); });
+    const links3 = links.map(l => Object.assign({}, l));
+    graph3d.graphData({ nodes: nodes3, links: links3 });
+  }
+
+  function focusNode3D(node) {
+    if (!graph3d) return;
+    const distance = 140;
+    const p = P3()[node.id] || { x: 0, y: 0, z: 0 };
+    const norm = Math.hypot(p.x, p.y, p.z) || 1;
+    const ratio = 1 + distance / norm;
+    graph3d.cameraPosition({ x: p.x * ratio, y: p.y * ratio, z: p.z * ratio }, p, 700);
+  }
+
+  // ---------------------------------------------------------------------
+  // Alternância 2D / 3D (topbar + botões flutuantes da tela cheia)
+  // ---------------------------------------------------------------------
+  let mode = '2d';
+  ['btn2d', 'fsBtn2d'].forEach(id => document.getElementById(id).addEventListener('click', () => setMode('2d')));
+  ['btn3d', 'fsBtn3d'].forEach(id => document.getElementById(id).addEventListener('click', () => setMode('3d')));
+  function setMode(m) {
+    mode = m;
+    ['btn2d', 'fsBtn2d'].forEach(id => document.getElementById(id).classList.toggle('active', m === '2d'));
+    ['btn3d', 'fsBtn3d'].forEach(id => document.getElementById(id).classList.toggle('active', m === '3d'));
+    document.getElementById('graph2d').classList.toggle('hidden', m !== '2d');
+    document.getElementById('graph3d').classList.toggle('hidden', m !== '3d');
+    if (m === '3d') {
+      renderGraph3D();
+      // o container acabou de sair do display:none; espera o layout aplicar
+      // antes de medir, senão o canvas nasce com tamanho errado.
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        sizeGraph3D();
+        if (graph3d && graph3d.zoomToFit) graph3d.zoomToFit(0, 80);
+      }));
+    } else if (network) {
+      network.setSize('100%', '100%'); network.redraw();
+    }
+  }
+
+  // Seletor "Colorir por"
+  (function buildColorSelect() {
+    const sel = document.getElementById('colorMode');
+    const opts = [{ key: 'type', label: S.color_type }];
+    if (anyCommunity) opts.push({ key: 'community', label: S.color_community });
+    CFG.color_modes.forEach(m => opts.push({ key: m.key, label: m.label }));
+    sel.innerHTML = opts.map(o => `<option value="${escapeHtml(o.key)}">${escapeHtml(o.label)}</option>`).join('');
+    sel.addEventListener('change', e => { colorMode = e.target.value; renderAll(); });
+    if (opts.length < 2) sel.parentElement.style.display = 'none';
+  })();
+
+  document.getElementById('resetViewBtn').addEventListener('click', () => {
+    isolateId = null;
+    renderAll();
+    if (mode === '2d' && network) network.fit({ animation: true });
+    if (mode === '3d' && graph3d) graph3d.cameraPosition({ x: 0, y: 0, z: 1100 }, { x: 0, y: 0, z: 0 }, 700);
+  });
+
+  // Seletor de organização espacial
+  (function buildLayoutPicker() {
+    const picker = document.getElementById('layout-picker');
+    picker.innerHTML = CFG.layouts.enabled.map(k => `
+      <div class="lay-opt${k === layoutMode ? ' active' : ''}" data-layout="${k}">
+        <b>${escapeHtml(S['layout_' + k])}</b><span>${escapeHtml(S['layout_' + k + '_desc'])}</span>
+      </div>`).join('');
+    picker.querySelectorAll('.lay-opt').forEach(el => {
+      el.addEventListener('click', () => {
+        const lm = el.getAttribute('data-layout');
+        if (lm === layoutMode) return;
+        layoutMode = lm;
+        picker.querySelectorAll('.lay-opt').forEach(o => o.classList.toggle('active', o === el));
+        if (lm === 'communities' && CFG.layouts.sync_community_color && anyCommunity && colorMode !== 'community') {
+          colorMode = 'community';
+          document.getElementById('colorMode').value = 'community';
+        }
+        renderVis();
+        if (graph3d) renderGraph3D();
+        if (mode === '2d' && network) network.fit({ animation: true });
+        if (mode === '3d' && graph3d && graph3d.zoomToFit) graph3d.zoomToFit(700, 60);
+      });
+    });
+  })();
+
+  function renderAll() {
+    renderVis();
+    if (graph3d) renderGraph3D();
+    renderLegend();
+  }
+
+  // ---------------------------------------------------------------------
+  // Tela cheia (só o grafo) + sidebar auto-hide
+  // ---------------------------------------------------------------------
+  const sidebarEl = document.getElementById('sidebar');
+  const EDGE_PX = 6;
+  let hideTimer = null, cssFsFallback = false;
+
+  function isFs() { return document.body.classList.contains('is-fullscreen'); }
+  function revealSidebar() { if (!isFs()) return; clearTimeout(hideTimer); sidebarEl.classList.add('revealed'); }
+  function scheduleHideSidebar() {
+    if (!isFs()) return;
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => sidebarEl.classList.remove('revealed'), 260);
+  }
+  function applyFullscreen(on) {
+    document.body.classList.toggle('is-fullscreen', on);
+    if (!on) sidebarEl.classList.remove('revealed');
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      onStageResize();
+      if (mode === '2d' && network) network.fit({ animation: false });
+    }));
+  }
+  function toggleFullscreen() {
+    if (document.fullscreenElement) { document.exitFullscreen(); return; }
+    if (cssFsFallback) { cssFsFallback = false; applyFullscreen(false); return; }
+    const el = document.documentElement;
+    const req = el.requestFullscreen ? el.requestFullscreen() : Promise.reject();
+    Promise.resolve(req).catch(() => { cssFsFallback = true; applyFullscreen(true); });
+  }
+  document.addEventListener('fullscreenchange', () => {
+    if (!cssFsFallback) applyFullscreen(!!document.fullscreenElement);
+  });
+  document.getElementById('fsBtn').addEventListener('click', toggleFullscreen);
+  document.getElementById('fsExit').addEventListener('click', toggleFullscreen);
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && cssFsFallback) { cssFsFallback = false; applyFullscreen(false); }
+  });
+  document.addEventListener('mousemove', e => {
+    if (!isFs()) return;
+    if (e.clientX >= window.innerWidth - EDGE_PX) revealSidebar();
+  });
+  sidebarEl.addEventListener('mouseenter', revealSidebar);
+  sidebarEl.addEventListener('mouseleave', scheduleHideSidebar);
+
+  // ---------------------------------------------------------------------
+  // Foco / isolamento -- acionados por delegação de eventos (atributos
+  // data-*), o que funciona com QUALQUER id de nó (aspas, acentos, etc).
+  // ---------------------------------------------------------------------
+  function focusNode(id) {
+    if (!nodeById[id]) return;
+    showNodeInfo(id);
+    if (mode === '2d') focusNode2D(id);
+    else { ensure3D(); renderGraph3D(); focusNode3D(nodeById[id]); }
+  }
+  function isolateNode(id) {
+    isolateId = id; renderAll();
+    if (mode === '2d') setTimeout(() => network && network.fit({ animation: true }), 60);
+  }
+  document.addEventListener('click', e => {
+    const el = e.target.closest('[data-focus],[data-isolate],[data-clear-isolate]');
+    if (!el) return;
+    if (el.hasAttribute('data-focus')) focusNode(el.getAttribute('data-focus'));
+    else if (el.hasAttribute('data-isolate')) isolateNode(el.getAttribute('data-isolate'));
+    else { isolateId = null; renderAll(); }
+  });
+
+  // ---------------------------------------------------------------------
+  // Painel de inspeção
+  // ---------------------------------------------------------------------
+  const HIDE_PROPS = new Set(['id', 'label'].concat(CFG.inspector.hide_props));
+  function formatVal(v) {
+    if (typeof v === 'number') return Number.isInteger(v) ? String(v) : v.toFixed(4);
+    return String(v);
+  }
+  function renderProps(props) {
+    if (!props) return '';
+    return Object.keys(props).filter(k => !HIDE_PROPS.has(k) && props[k] !== null && props[k] !== undefined)
+      .map(k => `<div class="prop-row"><span class="prop-k">${escapeHtml(k)}</span><span class="prop-v">${escapeHtml(formatVal(props[k]))}</span></div>`)
+      .join('');
+  }
+  function nodeNeighbors(id) {
+    return DATA.links.filter(l => l.source === id || l.target === id).map(l => {
+      const otherId = l.source === id ? l.target : l.source;
+      const other = nodeById[otherId];
+      return { id: otherId, label: other ? shortLabel(other) : otherId,
+               rel: l.type, dir: l.source === id ? '→' : '←' };
+    });
+  }
+  function showNodeInfo(id) {
+    if (!UI.inspector) return;
+    const n = nodeById[id];
+    if (!n) return;
+    const col = nodeColor(n);
+    const comm = idCommunity[id];
+    let html = `
+      <div class="info-head">
+        <span class="swatch" style="background:${col};color:${col}"></span>
+        <div><div class="info-title">${escapeHtml(n.label)}</div>
+        <div class="info-type">${escapeHtml(typeLabel(n.type))}</div></div>
+      </div>
+      <div class="chips">
+        <span class="chip">${escapeHtml(S.degree_chip)} ${degree[id] || 0}</span>
+        ${comm !== undefined ? `<span class="chip" style="border-color:${communityColor[comm] || '#8a7a5c'}">${escapeHtml(S.community_chip)} ${comm}</span>` : ''}
+      </div>
+      <div class="props">${renderProps(n.props)}</div>`;
+
+    CFG.inspector.edge_rankings.forEach(rk => {
+      const rows = DATA.links
+        .filter(l => l.type === rk.edge_type && (l.source === id || l.target === id))
+        .map(l => { const oid = l.source === id ? l.target : l.source; const o = nodeById[oid];
+                    return { id: oid, label: o ? o.label : oid,
+                             score: (l.props && l.props[rk.score_prop]) || 0 }; })
+        .sort((a, b) => b.score - a.score);
+      if (!rows.length) return;
+      html += `<div class="field-title">${escapeHtml(rk.title)} (${rows.length})</div>
+        <div class="sims">${rows.map(s =>
+          `<div class="sim-row" data-focus="${escapeHtml(s.id)}">${escapeHtml(s.label)}<span class="sim-score">${Number(s.score).toFixed(rk.decimals)}</span></div>`
+        ).join('')}</div>`;
+    });
+
+    const neighbors = nodeNeighbors(id);
+    html += `<div class="field-title">${escapeHtml(S.neighbors_title)} (${neighbors.length})</div>
+      <div class="neighbors">${neighbors.length ? neighbors.slice(0, 60).map(nb =>
+        `<div class="nb-row" data-focus="${escapeHtml(nb.id)}"><span class="nb-rel">${nb.dir} ${escapeHtml(nb.rel)}</span>${escapeHtml(nb.label)}</div>`
+      ).join('') : `<div class="nb-row empty">${escapeHtml(S.no_neighbors)}</div>`}</div>
+      <button class="isolate-btn" data-isolate="${escapeHtml(id)}">${escapeHtml(S.isolate_btn)}</button>
+      <button class="isolate-btn ghost" data-clear-isolate="1">${escapeHtml(S.show_all_btn)}</button>`;
+
+    document.getElementById('info-content').innerHTML = html;
+  }
+
+  // ---------------------------------------------------------------------
+  // Busca
+  // ---------------------------------------------------------------------
+  const searchInput = document.getElementById('search');
+  const searchResults = document.getElementById('search-results');
+  searchInput.addEventListener('input', () => {
+    const q = searchInput.value.trim().toLowerCase();
+    if (!q) { searchResults.innerHTML = ''; return; }
+    const hits = DATA.nodes.filter(n => (n.label || '').toLowerCase().includes(q)).slice(0, 10);
+    searchResults.innerHTML = hits.map(n =>
+      `<div class="sr-row" data-focus="${escapeHtml(n.id)}"><span>${escapeHtml(shortLabel(n))}</span><span class="sr-type">${escapeHtml(typeLabel(n.type))}</span></div>`
+    ).join('') || `<div class="sr-row empty">${escapeHtml(S.no_results)}</div>`;
+  });
+
+  // ---------------------------------------------------------------------
+  // Legenda (ordenada por quantidade, maior primeiro)
+  // ---------------------------------------------------------------------
+  const legendDiv = document.getElementById('legend');
+  function renderLegend() {
+    if (!UI.legend) return;
+    const counts = {};
+    DATA.nodes.forEach(n => counts[n.type] = (counts[n.type] || 0) + 1);
+    const types = Object.keys(counts).sort((a, b) => counts[b] - counts[a]);
+    legendDiv.innerHTML = types.map(t => `
+      <div class="legend-row">
+        <input type="checkbox" data-type="${escapeHtml(t)}" ${hiddenTypes.has(t) ? '' : 'checked'}>
+        <span class="dot" style="background:${TYPES[t] ? TYPES[t].color : '#8a7a5c'}"></span>
+        <span class="lname">${escapeHtml(typeLabel(t))}</span>
+        <span class="lcount">${counts[t]}</span>
+      </div>`).join('');
+    legendDiv.querySelectorAll('input[type=checkbox]').forEach(cb => {
+      cb.addEventListener('change', e => {
+        const t = e.target.getAttribute('data-type');
+        if (e.target.checked) hiddenTypes.delete(t); else hiddenTypes.add(t);
+        document.getElementById('select-all-cb').checked = hiddenTypes.size === 0;
+        renderVis(); if (graph3d) renderGraph3D();
+      });
+    });
+  }
+  document.getElementById('select-all-cb').addEventListener('change', e => {
+    if (e.target.checked) hiddenTypes.clear();
+    else Object.keys(TYPES).forEach(t => hiddenTypes.add(t));
+    renderLegend(); renderVis(); if (graph3d) renderGraph3D();
+  });
+
+  // ---------------------------------------------------------------------
+  // Painéis customizados + painel de comunidades
+  // ---------------------------------------------------------------------
+  (function renderPanels() {
+    const host = document.getElementById('sb-panels');
+    host.innerHTML = CFG.panels.map((p, i) => `
+      <h3>${escapeHtml(p.title)}${p.hint ? ` <span class="hint-small">${escapeHtml(p.hint)}</span>` : ''}</h3>
+      <div>${p.rows.length ? p.rows.map(r => `
+        <div class="rank-row${r.node_id ? '' : ' static'}"${r.node_id ? ` data-focus="${escapeHtml(r.node_id)}"` : ''}>
+          <span>${escapeHtml(r.label)}</span><span class="rank-val">${escapeHtml(r.value)}</span>
+        </div>`).join('') : `<span class="empty">${escapeHtml(S.empty_panel)}</span>`}</div>`).join('');
+  })();
+
+  (function renderCommunitiesPanel() {
+    if (!(UI.communities_panel && anyCommunity)) return;
+    const groups = {};
+    DATA.nodes.forEach(n => { const c = idCommunity[n.id];
+      if (c !== undefined) (groups[c] = groups[c] || []).push(n); });
+    const rows = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+    document.getElementById('top-communities').innerHTML = rows.map(c => {
+      const sample = groups[c].slice(0, 3).map(n => shortLabel(n)).join(', ');
+      return `<div class="comm-row" data-focus="${escapeHtml(groups[c][0].id)}">
+        <span class="dot" style="background:${communityColor[c] || '#8a7a5c'}"></span>
+        <span>${escapeHtml(S.community_word)} ${escapeHtml(c)} <span class="hint-small">(${escapeHtml(sample)}…)</span></span>
+        <span class="csize">${groups[c].length}</span>
+      </div>`;
+    }).join('') || `<span class="empty">${escapeHtml(S.empty_panel)}</span>`;
+  })();
+
+  // ---------------------------------------------------------------------
+  // Estatísticas + boot
+  // ---------------------------------------------------------------------
+  (function renderStats() {
+    if (!UI.stats) return;
+    const nComm = new Set(Object.values(idCommunity)).size;
+    let html = `<b>${DATA.nodes.length}</b> ${escapeHtml(S.stats_nodes)} · ` +
+      `<b>${DATA.links.length}</b> ${escapeHtml(S.stats_edges)}` +
+      (nComm ? ` · <b>${nComm}</b> ${escapeHtml(S.stats_communities)}` : '');
+    CFG.stats_extra.forEach(r => {
+      html += `<br>${escapeHtml(r.label)}: <b>${escapeHtml(r.value)}</b>`;
+    });
+    if (CFG.meta.generated_at) html += `<br>${escapeHtml(S.stats_generated)} ${escapeHtml(CFG.meta.generated_at)}`;
+    document.getElementById('stats').innerHTML = html;
+  })();
+
+  renderLegend();
+  renderVis();
+  if (UI.mode === '3d') setMode('3d');
+})();
+</script>
+</body></html>
