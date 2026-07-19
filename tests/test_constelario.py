@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from constelario import BUILTIN_ICONS, Graph, Theme
+from constelario import BUILTIN_ICONS, Graph, Theme, edges
 
 
 def grafo_minimo() -> Graph:
@@ -270,6 +270,100 @@ def test_from_edges_csv(tmp_path):
 def test_from_edges_extensao_invalida(tmp_path):
     with pytest.raises(ValueError, match="extensão"):
         Graph.from_edges(str(tmp_path / "x.txt"), source="a", target="b")
+
+
+# ---------------------------------------------------------------------------
+# Estratégias de criação de arestas + peso
+# ---------------------------------------------------------------------------
+def _tabela_features():
+    # dois grupos bem separados no espaço de features
+    return [
+        {"id": "a1", "nome": "A1", "x": 0.0, "y": 0.0},
+        {"id": "a2", "nome": "A2", "x": 0.1, "y": 0.1},
+        {"id": "a3", "nome": "A3", "x": 0.2, "y": 0.0},
+        {"id": "b1", "nome": "B1", "x": 9.0, "y": 9.0},
+        {"id": "b2", "nome": "B2", "x": 9.1, "y": 9.2},
+    ]
+
+
+def test_from_table_knn_euclidiano():
+    g = Graph.from_table(_tabela_features(), id="id", label="nome",
+                         connect=edges.knn(["x", "y"], k=1, metric="euclidean"))
+    cfg = g.to_config()
+    assert len(cfg["nodes"]) == 5
+    # cada aresta liga vizinhos do MESMO grupo (a* com a*, b* com b*)
+    for l in cfg["links"]:
+        assert l["source"][0] == l["target"][0]
+        assert "score" in l["props"]
+
+
+def test_edges_radius_e_threshold():
+    tab = _tabela_features()
+    g1 = Graph.from_table(tab, id="id", connect=edges.radius(["x", "y"], radius=1.0))
+    # só liga pares próximos (dentro de cada grupo), não entre grupos distantes
+    assert all(l["source"][0] == l["target"][0] for l in g1.to_config()["links"])
+    g2 = Graph.from_table(tab, id="id",
+                          connect=edges.threshold(["x", "y"], threshold=0.99, metric="cosine"))
+    assert len(g2.to_config()["links"]) >= 1
+
+
+def test_edges_jaccard_conjuntos():
+    tab = [
+        {"id": "p1", "tags": "python;dados"},
+        {"id": "p2", "tags": "python;web"},
+        {"id": "p3", "tags": "cobol"},
+    ]
+    g = Graph.from_table(tab, id="id",
+                         connect=edges.jaccard("tags", threshold=0.2, sep=";"))
+    pares = {(l["source"], l["target"]) for l in g.to_config()["links"]}
+    assert ("p1", "p2") in pares or ("p2", "p1") in pares  # compartilham "python"
+    assert not any("p3" in p for p in pares)               # cobol não liga a ninguém
+
+
+def test_edges_cooccurrence():
+    tab = [{"id": "x", "sala": 1}, {"id": "y", "sala": 1}, {"id": "z", "sala": 2}]
+    g = Graph.from_table(tab, id="id", connect=edges.cooccurrence("sala"))
+    links = g.to_config()["links"]
+    assert len(links) == 1                       # x-y (mesma sala); z sozinho
+    assert links[0]["props"]["peso"] == 1
+
+
+def test_edges_rule_par_e_unaria():
+    tab = [{"id": "1", "v": 10}, {"id": "2", "v": 12}, {"id": "3", "v": 50}]
+    g = Graph.from_table(tab, id="id",
+                         connect=edges.rule(lambda a, b: abs(a["v"] - b["v"]) <= 5))
+    assert len(g.to_config()["links"]) == 1      # 10~12; 50 fica de fora
+    g2 = Graph.from_table(tab, id="id",
+                          connect=edges.rule(lambda n: ["3"] if n["v"] < 20 else []))
+    assert len(g2.to_config()["links"]) == 2     # 1->3 e 2->3
+
+
+def test_edges_bipartite_projection():
+    # usuários u* conectados a itens i* -> projeta usuários por itens em comum
+    e = [{"u": "u1", "i": "i1"}, {"u": "u1", "i": "i2"},
+         {"u": "u2", "i": "i1"}, {"u": "u2", "i": "i2"}, {"u": "u3", "i": "i9"}]
+    g = Graph.from_edges(e, source="u", target="i",
+                         source_type="Usuário", target_type="Item")
+    g.connect(edges.bipartite("Usuário", over="Item", threshold=0.5))
+    proj = [l for l in g.to_config()["links"] if l["type"] == "SIMILAR"]
+    pares = {frozenset((l["source"], l["target"])) for l in proj}
+    assert frozenset(("u1", "u2")) in pares      # itens idênticos
+    assert not any("u3" in p for p in pares)     # u3 não compartilha itens
+
+
+def test_set_edge_weight_config():
+    g = grafo_minimo()
+    g.set_edge_weight("score", min_width=1, max_width=6)
+    ew = g.to_config()["edge_weight"]
+    assert ew["prop"] == "score" and ew["max"] == 6
+    with pytest.raises(ValueError):
+        g.set_edge_weight("score", min_width=5, max_width=2)
+
+
+def test_from_edges_weight_ativa_edge_weight():
+    e = [{"de": "a", "para": "b", "peso": 5}, {"de": "b", "para": "c", "peso": 1}]
+    g = Graph.from_edges(e, source="de", target="para", weight="peso")
+    assert g.to_config()["edge_weight"]["prop"] == "peso"
 
 
 def test_from_networkx():

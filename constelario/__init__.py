@@ -10,15 +10,16 @@ API pública::
     g.add_node("p1", "Alice", "Pessoa")
     g.save("grafo.html")
 """
+from . import edges
 from .graph import LAYOUTS, Graph
 from .icons import BUILTIN_ICONS
 from .model import Edge, Node, TypeStyle
 from .strings import DEFAULT_STRINGS
 from .theme import DEFAULT_PALETTE, Theme
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __all__ = [
-    "Graph", "Theme", "Node", "Edge", "TypeStyle",
+    "Graph", "Theme", "Node", "Edge", "TypeStyle", "edges",
     "BUILTIN_ICONS", "DEFAULT_PALETTE", "DEFAULT_STRINGS", "LAYOUTS",
     "__version__",
 ]

@@ -61,6 +61,7 @@ class Graph:
         self._hidden_props: "list[str]" = []
         self._stats_extra: "list[dict]" = []
         self._strings: "dict[str, str]" = {}
+        self._edge_weight: "Optional[dict]" = None
         self._node_size = {"min": 7.0, "max": 46.0}
         self._layouts = {"default": "constel", "enabled": list(LAYOUTS),
                          "sync_community_color": True}
@@ -248,6 +249,33 @@ class Graph:
                                     "score_prop": score_prop, "decimals": decimals})
         return self
 
+    def set_edge_weight(self, prop: str, *, min_width: float = 0.4,
+                        max_width: float = 4.0, scale_opacity: bool = True) -> "Graph":
+        """Faz a **largura** (e opcionalmente a opacidade) de cada aresta escalar
+        pela propriedade numérica ``prop`` — o "peso" da aresta, como num grafo
+        de conhecimento. Os valores são normalizados entre todas as arestas.
+
+        Combine com ``edge_style`` (cor por tipo) e ``inspector_ranking`` (para
+        listar vizinhos por peso). As estratégias de ``constelario.edges`` já
+        gravam um peso (``score``/``dist``/``peso``) pronto para usar aqui.
+        """
+        _require_str(prop, "prop de peso")
+        if max_width < min_width or min_width <= 0:
+            raise ValueError(f"faixa de largura inválida (0 < min <= max): "
+                             f"min={min_width}, max={max_width}")
+        self._edge_weight = {"prop": prop, "min": float(min_width),
+                             "max": float(max_width), "opacity": bool(scale_opacity)}
+        return self
+
+    def connect(self, strategy) -> "Graph":
+        """Aplica uma estratégia de conexão (de ``constelario.edges``) sobre os
+        nós atuais, criando as arestas. Encadeável; pode ser chamado várias vezes
+        com estratégias diferentes."""
+        for e in strategy.build(self):
+            self.add_edge(e["source"], e["target"],
+                          type=e.get("type", ""), props=e.get("props") or {})
+        return self
+
     def hide_props(self, *names: str) -> "Graph":
         """Oculta propriedades no painel de inspeção (ex.: ids internos)."""
         self._hidden_props.extend(names)
@@ -378,6 +406,7 @@ class Graph:
         target: str,
         edge_type: Optional[str] = None,
         edge_props: Optional[Sequence[str]] = None,
+        weight: Optional[str] = None,
         source_type: str = "Nó",
         target_type: Optional[str] = None,
         nodes: Optional[Any] = None,
@@ -401,6 +430,8 @@ class Graph:
             edge_type: coluna cujo valor vira o tipo da aresta (ex.: a relação).
             edge_props: colunas que viram ``props`` da aresta. ``None`` (padrão)
                 usa todas as colunas exceto source/target/edge_type; ``[]`` = nenhuma.
+            weight: coluna numérica de peso da aresta — a largura da linha passa a
+                escalar por ela (equivale a chamar :meth:`set_edge_weight`).
 
         Tipagem dos nós auto-criados:
             source_type / target_type: tipo dos nós de origem / destino (útil em
@@ -482,6 +513,71 @@ class Graph:
             etype = str(row.get(edge_type)) if edge_type and row.get(edge_type) is not None else ""
             props = _tabular.pick_props(row, edge_props, e_exclude)
             g.add_edge(str(s), str(t), type=etype, props=props)
+        if weight:
+            g.set_edge_weight(weight)
+        return g
+
+    @classmethod
+    def from_table(
+        cls,
+        table: Any,
+        *,
+        id: str,
+        label: Optional[str] = None,
+        type: Optional[str] = None,
+        community: Optional[str] = None,
+        props: Optional[Sequence[str]] = None,
+        default_type: str = "Nó",
+        connect: Optional[Any] = None,
+        title: str = "Constelário",
+        **kwargs,
+    ) -> "Graph":
+        """Cria um :class:`Graph` a partir de uma tabela de **nós** e conecta-os
+        por uma (ou várias) estratégia(s) de ``constelario.edges``.
+
+        ``table`` pode ser um caminho ``.csv``/``.parquet``, ``DataFrame`` ou
+        iterável de dicts. Cada linha vira um nó.
+
+        Mapeamento de colunas:
+            id: coluna do identificador único (obrigatória).
+            label: coluna do rótulo (padrão: o próprio id).
+            type: coluna do tipo do nó (padrão: ``default_type`` para todos).
+            community: coluna da comunidade (convertida para int).
+            props: colunas que viram ``props`` (padrão: todas as demais) — são
+                elas que as estratégias de similaridade leem como features.
+
+        connect: uma estratégia de ``constelario.edges`` (ou uma lista delas)
+            aplicada após criar os nós. Ex.: ``connect=edges.knn(["x","y"], k=5)``.
+
+        Exemplo::
+
+            from constelario import Graph, edges
+            g = Graph.from_table("alunos.csv", id="matricula", label="nome",
+                                 community="turma",
+                                 connect=edges.knn(["nota", "faltas"], k=4))
+        """
+        g = cls(title=title, **kwargs)
+        exclude = {id, label, type, community}
+        for row in _tabular.read_rows(table):
+            raw = row.get(id)
+            if raw is None:
+                continue
+            nid = str(raw)
+            if nid in g._nodes:
+                continue
+            lbl = str(row.get(label) if label and row.get(label) is not None else nid)
+            ntype = str(row.get(type)) if type and row.get(type) is not None else default_type
+            comm = row.get(community) if community else None
+            if comm is not None:
+                try:
+                    comm = int(comm)
+                except (TypeError, ValueError):
+                    comm = None
+            g.add_node(nid, lbl, ntype, props=_tabular.pick_props(row, props, exclude),
+                       community=comm)
+        if connect is not None:
+            for strategy in (connect if isinstance(connect, (list, tuple)) else [connect]):
+                g.connect(strategy)
         return g
 
     # ------------------------------------------------------------------
@@ -544,6 +640,7 @@ class Graph:
             "nodes": [n.to_dict() for n in self._nodes.values()],
             "links": [e.to_dict() for e in self._edges],
             "edge_styles": edge_styles,
+            "edge_weight": dict(self._edge_weight) if self._edge_weight else None,
             "color_modes": list(self._color_modes),
             "node_size": dict(self._node_size),
             "layouts": dict(self._layouts),

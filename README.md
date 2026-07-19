@@ -12,6 +12,8 @@ espaciais, com painel lateral de busca, legenda, inspeção e rankings.
 | **Layouts** | Constelação (anéis) · Comunidades (grupos separados) · Camadas (colunas por tipo) · Espiral/Globo |
 | **Tela cheia** | Com painel lateral retrátil (estilo "taskbar oculta") e toggle 2D/3D flutuante |
 | **Customização** | Tema (todas as cores), tipos, ícones, tamanhos, arestas, layouts, textos da UI, painéis |
+| **Dados** | Carrega de CSV/Parquet/DataFrame; arestas explícitas **ou** por similaridade (kNN, cosseno, Jaccard, correlação, raio, limiar, co-ocorrência, regra, bipartido) |
+| **Pesos** | Arestas com valor/peso que engrossam a linha e ranqueiam vizinhos |
 | **Saída** | Um `.html` autocontido (offline) ou versão leve via CDN |
 
 ---
@@ -28,9 +30,12 @@ pip install ./constelario
 # ou, para desenvolver a própria biblioteca:
 pip install -e ./constelario
 
-# opcional: interoperabilidade com networkx e testes
-pip install "./constelario[networkx,dev]"
+# opcional: parquet (pandas+pyarrow), networkx e testes
+pip install "./constelario[data,networkx,dev]"
 ```
+
+> CSV, DataFrames e listas de dicts funcionam **sem nenhuma dependência**; o
+> extra `[data]` só é necessário para ler arquivos `.parquet`.
 
 ## Começo rápido
 
@@ -243,6 +248,93 @@ for n, d in G.nodes(data=True):
     d["label"] = f"Membro {n}"; d["type"] = "Pessoa"; d["community"] = d.pop("club") == "Officer"
 g = Graph.from_networkx(G, title="Clube de Karatê")
 ```
+
+---
+
+## A partir de uma base de dados (CSV / Parquet / DataFrame)
+
+Você não precisa criar nós e arestas na mão. Toda fonte tabular é aceita: um
+caminho `.csv` (lido **sem nenhuma dependência**), um `.parquet` (requer
+`pip install "constelario[data]"`), um `DataFrame` do pandas ou uma lista de
+dicionários.
+
+### 1. Já tenho as ligações (lista de arestas) — `Graph.from_edges`
+
+Cada linha é uma ligação. Ideal para relações explícitas da base (comércio
+bilateral, citações, transferências, follows...). As arestas podem carregar
+**peso e valores** — como num grafo de conhecimento:
+
+```python
+from constelario import Graph
+
+g = Graph.from_edges(
+    "comercio.csv",            # ou um DataFrame / .parquet / lista de dicts
+    source="reporter", target="partner",
+    edge_type="fluxo",         # coluna que vira o tipo da relação
+    weight="valor_usd",        # coluna de peso → a linha engrossa conforme o valor
+    source_type="País",
+)
+g.inspector_ranking("fluxo", title="Maiores fluxos", score_prop="valor_usd", decimals=0)
+g.save("comercio.html")
+```
+
+Qualquer coluna extra vira `props` (aparece no inspetor). Para grafos
+**bipartidos** (ex.: `Usuário → Produto`), use `source_type`/`target_type` e,
+opcionalmente, uma tabela de nós separada (`nodes=`, com `node_id`, `node_label`,
+`node_type`, `node_community`).
+
+### 2. Tenho só os nós — escolho como conectar — `Graph.from_table` + `constelario.edges`
+
+Quando a base tem entidades com atributos mas **não** tem as ligações, você
+escolhe a estratégia de conexão na hora de montar o grafo:
+
+```python
+from constelario import Graph, edges
+
+g = Graph.from_table(
+    "alunos.csv", id="matricula", label="nome", community="turma",
+    connect=edges.knn(["nota", "faltas", "frequencia"], k=5, metric="cosine"),
+)
+g.set_edge_weight("score")     # linha mais grossa = mais parecido
+g.save("alunos.html")
+```
+
+As colunas numéricas viram as *features* que as estratégias comparam. Estratégias
+disponíveis (`connect=` aceita uma ou uma lista):
+
+| Estratégia | O que faz |
+|---|---|
+| `edges.knn(features, k=5, metric=...)` | liga cada nó aos **k vizinhos mais próximos** |
+| `edges.threshold(features, threshold=0.7, metric=...)` | todos os pares acima de um **limiar de similaridade** |
+| `edges.radius(features, radius=1.0, metric="euclidean")` | todos os pares dentro de um **raio de vizinhança** |
+| `edges.cosine(features, threshold=...)` | atalho de **similaridade por cosseno** |
+| `edges.correlation(features, threshold=...)` | **correlação** de Pearson entre os perfis |
+| `edges.jaccard(coluna, threshold=..., sep=";")` | **Jaccard** entre conjuntos (tags, categorias) |
+| `edges.cooccurrence(by="pedido")` | **co-ocorrência**: liga quem compartilha um contexto |
+| `edges.rule(fn)` | **regra de negócio**: sua função decide quem liga |
+| `edges.bipartite("Usuário", over="Produto")` | **projeção bipartida** por vizinhos em comum |
+
+`metric` ∈ `"cosine"`, `"euclidean"`, `"correlation"`, `"jaccard"`. Todas gravam
+um peso na aresta (`score`/`dist`/`peso`), pronto para `set_edge_weight` e
+`inspector_ranking`. Aplique várias em sequência com `g.connect(estrategia)`.
+
+**Regra de negócio** — `fn(a, b)` decide cada par, ou `fn(no)` devolve os alvos:
+
+```python
+# liga alunos da mesma turma com notas próximas
+g.connect(edges.rule(lambda a, b: a["turma"] == b["turma"] and abs(a["nota"] - b["nota"]) < 1))
+```
+
+### Arestas com peso — `set_edge_weight`
+
+```python
+g.set_edge_weight("valor_usd", min_width=0.5, max_width=5, scale_opacity=True)
+```
+
+A **largura** (e, por padrão, a opacidade) de cada aresta passa a escalar pela
+propriedade numérica, normalizada entre todas as arestas — em 2D e 3D. `from_edges(weight=...)`
+já chama isso por você. Combine com `edge_style` (cor por tipo de relação) e
+`inspector_ranking` (listar vizinhos por peso) para um grafo de conhecimento completo.
 
 ---
 

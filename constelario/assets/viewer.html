@@ -376,6 +376,33 @@
     return edgeStyleOf(l).color;
   }
 
+  // Peso das arestas: largura (e opcionalmente opacidade) escalam pela
+  // propriedade numérica escolhida, normalizada entre todas as arestas.
+  const EW = CFG.edge_weight;
+  let ewMin = 0, ewMax = 1;
+  if (EW) {
+    const vals = DATA.links.map(l => l.props && typeof l.props[EW.prop] === 'number' ? l.props[EW.prop] : null)
+      .filter(v => v !== null);
+    if (vals.length) { ewMin = Math.min.apply(null, vals); ewMax = Math.max.apply(null, vals); }
+  }
+  function ewFrac(l) {
+    const v = l.props ? l.props[EW.prop] : null;
+    if (typeof v !== 'number') return null;
+    return ewMax > ewMin ? (v - ewMin) / (ewMax - ewMin) : 0.5;
+  }
+  function edgeWidth(l) {
+    const base = edgeStyleOf(l).width;
+    if (!EW) return base;
+    const t = ewFrac(l);
+    return t === null ? base : EW.min + t * (EW.max - EW.min);
+  }
+  function edgeOpacity(l) {
+    const base = edgeStyleOf(l).opacity;
+    if (!EW || !EW.opacity) return base;
+    const t = ewFrac(l);
+    return t === null ? base : 0.12 + 0.68 * t;
+  }
+
   // ---------------------------------------------------------------------
   // Medalhões (estilo árvore de habilidades): soquete escuro com gradiente,
   // aro gravado conforme o tier, cravos, anel na cor do nó e glifo em relevo.
@@ -656,8 +683,8 @@
       const st = edgeStyleOf(l);
       return {
         from: l.source, to: l.target,
-        color: { color: edgeColor(l), opacity: st.opacity, highlight: CFG.theme.gold2, hover: CFG.theme.gold2 },
-        width: st.width, dashes: !!st.dashes,
+        color: { color: edgeColor(l), opacity: edgeOpacity(l), highlight: CFG.theme.gold2, hover: CFG.theme.gold2 },
+        width: edgeWidth(l), dashes: !!st.dashes,
         smooth: { type: 'continuous', roundness: 0.25 },
       };
     });
@@ -696,7 +723,7 @@
       .nodeColor(n => nodeColor(n))
       .linkColor(l => edgeColor(l))
       .linkOpacity(0.35)
-      .linkWidth(l => Math.max(0.2, edgeStyleOf(l).width * 0.6))
+      .linkWidth(l => Math.max(0.2, edgeWidth(l) * 0.6))
       .cooldownTicks(0)
       .onNodeClick(n => { showNodeInfo(n.id); focusNode3D(n); })
       .onNodeHover(n => { container3d.style.cursor = n ? 'pointer' : 'default'; });
