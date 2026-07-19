@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "constelario"
+version = "0.1.0"
+description = "Grafos de conhecimento interativos (2D/3D) em um unico arquivo HTML, com layouts organizados, medalhoes ornamentados e painel lateral - sem servidor, sem dependencias JS."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Diego Henrique Xavier", email = "diegohenrique.mail@gmail.com" }]
+keywords = ["grafo", "knowledge-graph", "visualizacao", "vis-network", "3d-force-graph", "neo4j"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Scientific/Engineering :: Visualization",
+]
+
+[project.optional-dependencies]
+networkx = ["networkx>=2.6"]
+dev = ["pytest>=7"]
+
+[project.urls]
+Repository = "https://github.com/DiegoXavier-hub/constelario"
+
+[tool.setuptools.packages.find]
+include = ["constelario*"]
+
+[tool.setuptools.package-data]
+constelario = ["assets/*.html", "assets/vendor/*.js"]
