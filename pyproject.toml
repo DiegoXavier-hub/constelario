@@ -24,6 +24,9 @@ dev = ["pytest>=7"]
 [project.urls]
 Repository = "https://github.com/DiegoXavier-hub/constelario"
 
+[tool.setuptools]
+license-files = ["LICENSE", "THIRD_PARTY_LICENSES.md"]
+
 [tool.setuptools.packages.find]
 include = ["constelario*"]
 

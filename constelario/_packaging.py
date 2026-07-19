@@ -12,7 +12,9 @@ Dois modos de entrega das bibliotecas (vis-network, 3d-force-graph, three):
 from __future__ import annotations
 
 import base64
+import datetime as _dt
 import json
+import math
 from importlib import resources
 
 _CONFIG_OPEN = '<script id="constelario-config" type="application/json">'
@@ -33,8 +35,50 @@ _CDN_TAGS = """
 
 
 def _asset_text(*parts: str) -> str:
-    ref = resources.files("constelario").joinpath("assets", *parts)
+    # joinpath com vários argumentos só é garantido no Traversable a partir do
+    # 3.10; encadear com "/" (um componente por vez) funciona em 3.9 inclusive
+    # quando o pacote está dentro de um zip (zipfile.Path).
+    ref = resources.files("constelario")
+    for part in ("assets", *parts):
+        ref = ref / part
     return ref.read_text(encoding="utf-8")
+
+
+def _json_default(obj):
+    """Converte tipos comuns não-JSON (numpy, datetime, set...) — importante
+    para ``from_networkx``, onde props trazem escalares numpy/datas."""
+    if hasattr(obj, "item"):          # escalares numpy (float32, int64...)
+        try:
+            return _finite(obj.item())
+        except Exception:
+            pass
+    if isinstance(obj, (_dt.date, _dt.datetime, _dt.time)):
+        return obj.isoformat()
+    if isinstance(obj, (set, frozenset, tuple)):
+        return list(obj)
+    if isinstance(obj, bytes):
+        return obj.decode("utf-8", "replace")
+    return str(obj)
+
+
+def _finite(value):
+    """NaN/Infinity não são JSON válido e quebrariam o ``JSON.parse`` do
+    viewer (página em branco). Troca por ``None`` — comum em props vindas de
+    pandas/Neo4j."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
+def _sanitize(obj):
+    """Percorre a config trocando floats não-finitos por None (recursivo)."""
+    if isinstance(obj, float):
+        return _finite(obj)
+    if isinstance(obj, dict):
+        return {k: _sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize(v) for v in obj]
+    return obj
 
 
 def _inline_classic(js: str, label: str) -> str:
@@ -98,7 +142,10 @@ def render(config: dict, *, inline_js: bool = True) -> str:
 
     start = html.index(_CONFIG_OPEN) + len(_CONFIG_OPEN)
     end = html.index(_CONFIG_CLOSE, start)
-    # "</" vira "<\/" dentro do JSON (parse idêntico): impede que um "</script"
-    # em algum texto do usuário feche o bloco <script> e corrompa o HTML.
-    payload = json.dumps(config, ensure_ascii=False).replace("</", "<\\/")
+    # allow_nan=False garante JSON válido (NaN/Infinity quebrariam o JSON.parse
+    # do viewer); _sanitize já trocou os não-finitos por None e _json_default
+    # cobre numpy/datetime/set. "</" -> "<\/" impede que um "</script" no texto
+    # do usuário feche o bloco <script>.
+    payload = json.dumps(_sanitize(config), ensure_ascii=False,
+                         allow_nan=False, default=_json_default).replace("</", "<\\/")
     return html[:start] + "\n" + payload + "\n" + html[end:]

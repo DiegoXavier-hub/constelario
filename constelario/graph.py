@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import os
+import pathlib
 import tempfile
 import webbrowser
 from typing import Any, Iterable, Mapping, Optional, Sequence, Union
@@ -25,7 +26,7 @@ from . import _packaging
 from .icons import BUILTIN_ICONS
 from .model import VALID_TIERS, Edge, Node, TypeStyle, _require_str
 from .strings import DEFAULT_STRINGS
-from .theme import Theme
+from .theme import DEFAULT_PALETTE, Theme
 
 LAYOUTS = ("constel", "communities", "layers", "spiral")
 _ROW_KEYS = ("label", "value", "node_id")
@@ -90,7 +91,7 @@ class Graph:
         if name in self._types:
             raise ValueError(f"tipo {name!r} já registrado")
         if color is None:
-            palette = self.theme.palette
+            palette = self.theme.palette or DEFAULT_PALETTE
             color = palette[len(self._types) % len(palette)]
         self._types[name] = TypeStyle(label=label or name, color=color, icon=icon,
                                       tier=tier, ring=ring, hidden=hidden)
@@ -123,11 +124,15 @@ class Graph:
         (cor da paleta, ícone "dot"). IDs duplicados levantam ``ValueError``."""
         if node_id in self._nodes:
             raise ValueError(f"nó com id {node_id!r} já existe")
+        # constrói o nó (valida label/community/size/color) ANTES de registrar
+        # o tipo — assim uma entrada inválida não deixa um tipo-fantasma
+        # consumindo cor da paleta.
+        node = Node(id=node_id, label=label, type=type_name,
+                    props=dict(props or {}), community=community,
+                    icon=icon, color=color, size=size)
         if type_name not in self._types:
             self.add_type(type_name)
-        self._nodes[node_id] = Node(id=node_id, label=label, type=type_name,
-                                    props=dict(props or {}), community=community,
-                                    icon=icon, color=color, size=size)
+        self._nodes[node_id] = node
         return self
 
     def add_edge(
@@ -203,6 +208,12 @@ class Graph:
         for row in rows:
             if isinstance(row, Mapping):
                 item = {k: row.get(k) for k in _ROW_KEYS}
+            elif isinstance(row, str):
+                # uma str também é Sequence — sem esta guarda, "Bob" viraria
+                # três colunas ('B','o','b'). Exija tupla/lista explícita.
+                raise ValueError(
+                    f"cada linha do painel deve ser uma tupla (label, valor[, node_id]), "
+                    f"não uma string (recebido: {row!r})")
             else:
                 seq = list(row)
                 if len(seq) not in (2, 3):
@@ -228,8 +239,13 @@ class Graph:
         pela propriedade numérica ``score_prop`` da aresta (ex.: similaridade)."""
         _require_str(edge_type, "edge_type")
         _require_str(title, "título do ranking")
+        decimals = int(decimals)
+        # toFixed() no navegador só aceita 0..100; fora disso o inspetor
+        # inteiro deixaria de renderizar com RangeError.
+        if not 0 <= decimals <= 20:
+            raise ValueError(f"decimals deve estar entre 0 e 20 (recebido: {decimals})")
         self._edge_rankings.append({"edge_type": edge_type, "title": title,
-                                    "score_prop": score_prop, "decimals": int(decimals)})
+                                    "score_prop": score_prop, "decimals": decimals})
         return self
 
     def hide_props(self, *names: str) -> "Graph":
@@ -258,30 +274,36 @@ class Graph:
     ) -> "Graph":
         """Configura os layouts: qual abre por padrão, quais aparecem no menu
         e se escolher "Comunidades" troca a coloração junto."""
+        # valida TUDO antes de gravar qualquer campo — uma chamada que falha
+        # não pode deixar o objeto num estado parcialmente alterado.
+        new_enabled = self._layouts["enabled"]
         if enabled is not None:
-            enabled = list(enabled)
-            bad = [x for x in enabled if x not in LAYOUTS]
-            if bad or not enabled:
-                raise ValueError(f"layouts válidos: {LAYOUTS} (recebido: {enabled})")
-            self._layouts["enabled"] = enabled
-        if default is not None:
-            if default not in self._layouts["enabled"]:
-                raise ValueError(
-                    f"default {default!r} precisa estar entre os habilitados "
-                    f"{self._layouts['enabled']}")
-            self._layouts["default"] = default
+            new_enabled = list(enabled)
+            bad = [x for x in new_enabled if x not in LAYOUTS]
+            if bad or not new_enabled:
+                raise ValueError(f"layouts válidos: {LAYOUTS} (recebido: {new_enabled})")
+        new_default = default if default is not None else self._layouts["default"]
+        if new_default not in new_enabled:
+            raise ValueError(
+                f"o layout padrão {new_default!r} precisa estar entre os habilitados "
+                f"{new_enabled} — passe default= junto ao mudar enabled=")
+        self._layouts["enabled"] = new_enabled
+        self._layouts["default"] = new_default
         if sync_community_color is not None:
             self._layouts["sync_community_color"] = bool(sync_community_color)
         return self
 
     def set_node_size(self, min: Optional[float] = None, max: Optional[float] = None) -> "Graph":
         """Faixa de tamanho dos nós (o tamanho escala com o grau do nó)."""
-        if min is not None:
-            self._node_size["min"] = float(min)
-        if max is not None:
-            self._node_size["max"] = float(max)
-        if self._node_size["min"] <= 0 or self._node_size["max"] < self._node_size["min"]:
-            raise ValueError(f"faixa de tamanho inválida: {self._node_size}")
+        new_min = float(min) if min is not None else self._node_size["min"]
+        new_max = float(max) if max is not None else self._node_size["max"]
+        # valida antes de gravar: uma chamada inválida não pode corromper a faixa.
+        if new_min <= 0 or new_max < new_min:
+            raise ValueError(
+                f"faixa de tamanho inválida: min={new_min}, max={new_max} "
+                "(exige 0 < min <= max)")
+        self._node_size["min"] = new_min
+        self._node_size["max"] = new_max
         return self
 
     def set_ui(
@@ -432,9 +454,15 @@ class Graph:
         return path
 
     def show(self, *, inline_js: bool = True) -> str:
-        """Salva num arquivo temporário e abre no navegador padrão."""
+        """Salva num arquivo temporário e abre no navegador padrão.
+
+        Nota: o arquivo temporário persiste (não pode ser apagado logo após
+        abrir, pois o navegador o carrega de forma assíncrona).
+        """
         fd, path = tempfile.mkstemp(prefix="constelario_", suffix=".html")
         os.close(fd)
         self.save(path, inline_js=inline_js)
-        webbrowser.open("file:///" + path.replace(os.sep, "/").lstrip("/"))
+        # Path.as_uri() resolve drive (file:///C:/...), UNC (\\srv\share) e
+        # percent-encoding (#, %, espaços) — bem mais robusto que montar à mão.
+        webbrowser.open(pathlib.Path(path).as_uri())
         return path

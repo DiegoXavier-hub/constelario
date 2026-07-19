@@ -58,11 +58,17 @@ class Node:
         _require_str(self.id, "Node.id")
         _require_str(self.label, "Node.label")
         _require_str(self.type, "Node.type")
-        if self.community is not None and not isinstance(self.community, int):
+        # bool é subclasse de int — barra community=True/False virando 0/1.
+        if self.community is not None and (
+            not isinstance(self.community, int) or isinstance(self.community, bool)
+        ):
             raise ValueError(
                 f"Node.community deve ser int (recebido: {self.community!r})"
             )
-        _optional_number(self.size, "Node.size")
+        if self.color is not None:
+            _require_str(self.color, "Node.color")
+        if self.size is not None and _optional_number(self.size, "Node.size") <= 0:
+            raise ValueError(f"Node.size deve ser > 0 (recebido: {self.size!r})")
 
     def to_dict(self) -> dict:
         return {

@@ -99,6 +99,10 @@ caixa de estatísticas (padrão: agora).
 | `ring` | Anel do layout Constelação (0 = centro; 1, 2, 3... para fora). Sem valor, é atribuído pela ordem de registro (a partir de 1). |
 | `hidden` | Começa desligado na legenda; no layout Espiral/Globo esses nós formam o **halo externo** (bom para tipos muito numerosos). |
 
+Registrar o mesmo tipo duas vezes levanta `ValueError` (não há redefinição —
+configure o tipo uma vez só). Chamar `add_type` já é feito automaticamente por
+`add_node` para tipos novos.
+
 ### `add_node(node_id, label, type_name, *, props=None, community=None, icon=None, color=None, size=None)`
 
 Adiciona um nó. `props` é um dict livre mostrado no inspetor. `icon`/`color`/`size`
@@ -119,6 +123,10 @@ g.edge_style("default", color="#4a3c28", width=0.55, opacity=0.12)
 g.edge_style("SIMILAR_A", color="#f2c766", width=1.6, opacity=0.6)   # destaque
 g.edge_style("RUMOR", dashes=True, opacity=0.3)
 ```
+
+> **No modo 3D**, `color` e `width` são aplicados; `opacity` é uniforme e
+> `dashes` não tem efeito (limitação do 3d-force-graph). Um tipo de aresta
+> literalmente chamado `"default"` compartilha o estilo-base.
 
 ### `add_color_mode(key, label, *, prop, colors=None, fallback="#5a4c34")`
 
@@ -304,6 +312,10 @@ Todos são **determinísticos** (mesmo grafo → mesmas posições).
 
 - **"endpoint(s) de aresta não existem"** — você adicionou `add_edge` para um id
   sem `add_node` correspondente; a mensagem lista os ausentes.
+- **Valores `NaN`/`Inf` em `props`** (comuns em dados de pandas/Neo4j) — são
+  convertidos para `null` automaticamente, então não quebram a página.
+- **`props` com tipos numpy/`datetime`/`set`** — `numpy` vira número, datas viram
+  ISO-8601 e conjuntos viram listas; qualquer outro objeto vira `str`.
 - **3D abre com esferas simples por um instante** — o three.js carrega assíncrono;
   os medalhões são aplicados assim que ele termina (evento interno `three-ready`).
 - **Arquivo grande demais** — use `inline_js=False` (CDN) ou publique o HTML com

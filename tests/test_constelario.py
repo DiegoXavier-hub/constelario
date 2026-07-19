@@ -146,6 +146,88 @@ def test_icones_builtin_disponiveis():
         assert nome in BUILTIN_ICONS
 
 
+# ---------------------------------------------------------------------------
+# Robustez (fixes da revisão adversarial)
+# ---------------------------------------------------------------------------
+def test_nan_e_inf_viram_null_e_nao_quebram_json():
+    g = Graph(title="T")
+    g.add_node("a", "A", "X", props={"score": float("nan"), "z": float("inf")},
+               size=None)
+    g.add_type("Y", ring=float("inf"))
+    g.add_node("b", "B", "Y")
+    html = g.to_html(inline_js=False)
+    corpo = html[html.index("constelario-config"):]
+    assert "NaN" not in corpo and "Infinity" not in corpo
+    # a config precisa continuar sendo JSON parseável
+    ini = corpo.index(">") + 1
+    fim = corpo.index("</script>", ini)
+    json.loads(corpo[ini:fim].replace("<\\/", "</"))
+
+
+def test_props_tipos_exoticos_serializam(tmp_path):
+    import datetime as dt
+    g = Graph(title="T")
+    g.add_node("a", "A", "X", props={"quando": dt.date(2026, 7, 19),
+                                     "tags": {"x", "y"}})
+    caminho = g.save(tmp_path / "g.html", inline_js=False)  # não deve levantar
+    assert "2026-07-19" in open(caminho, encoding="utf-8").read()
+
+
+def test_community_bool_rejeitada():
+    g = Graph(title="T")
+    with pytest.raises(ValueError, match="community"):
+        g.add_node("a", "A", "X", community=True)
+
+
+def test_size_nao_positivo_rejeitado():
+    g = Graph(title="T")
+    with pytest.raises(ValueError, match="size"):
+        g.add_node("a", "A", "X", size=0)
+
+
+def test_add_node_invalido_nao_registra_tipo_fantasma():
+    g = Graph(title="T")
+    with pytest.raises(ValueError):
+        g.add_node("a", "A", "Pessoa", community=1.5)
+    # o tipo não pode ter ficado registrado pela tentativa que falhou
+    g.add_type("Pessoa", color="#123456")
+    g.add_node("a", "Alice", "Pessoa")
+    assert g.to_config()["types"]["Pessoa"]["color"] == "#123456"
+
+
+def test_add_panel_rejeita_string():
+    g = grafo_minimo()
+    with pytest.raises(ValueError, match="string"):
+        g.add_panel("P", ["Alice", "Bob"])
+
+
+def test_set_node_size_invalido_nao_corrompe_estado():
+    g = grafo_minimo()
+    with pytest.raises(ValueError):
+        g.set_node_size(min=0)
+    assert g.to_config()["node_size"]["min"] > 0
+
+
+def test_set_layouts_enabled_sem_default_valido_falha_sem_mutar():
+    g = grafo_minimo()
+    antes = g.to_config()["layouts"]["enabled"]
+    with pytest.raises(ValueError):
+        g.set_layouts(enabled=["communities", "layers"])  # default 'constel' ficaria órfão
+    assert g.to_config()["layouts"]["enabled"] == antes  # nada mudou
+
+
+def test_inspector_ranking_decimals_fora_de_faixa():
+    g = grafo_minimo()
+    with pytest.raises(ValueError, match="decimals"):
+        g.inspector_ranking("CONHECE", title="X", decimals=-1)
+
+
+def test_palette_vazia_nao_quebra():
+    g = Graph(title="T", theme=Theme().with_(palette=[]))
+    g.add_node("a", "A", "X")  # não deve levantar ZeroDivisionError
+    assert g.to_config()["types"]["X"]["color"]
+
+
 def test_from_networkx():
     nx = pytest.importorskip("networkx")
     G = nx.Graph()
