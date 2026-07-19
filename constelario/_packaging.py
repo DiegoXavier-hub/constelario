@@ -45,22 +45,36 @@ def _inline_classic(js: str, label: str) -> str:
     return f"<script>\n{js}\n</script>"
 
 
+def _b64_tag(element_id: str, text: str) -> str:
+    b64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
+    return f'<script type="text/plain" id="{element_id}">{b64}</script>'
+
+
 def _inline_scripts() -> str:
     vis = _asset_text("vendor", "vis-network.min.js")
     fg3d = _asset_text("vendor", "3d-force-graph.min.js")
-    three = _asset_text("vendor", "three.module.js")
-    three_b64 = base64.b64encode(three.encode("utf-8")).decode("ascii")
-    # O three só existe como ES module; embutimos em base64 e importamos de um
-    # Blob URL — assim o HTML continua um arquivo único que abre de file://.
+    three_main = _asset_text("vendor", "three.module.js")
+    three_core = _asset_text("vendor", "three.core.js")
+    # O three só existe como ES module e, desde o r167, vem em DOIS arquivos
+    # (three.module.js importa './three.core.js'). Embutimos ambos em base64 e
+    # importamos via Blob URLs, reescrevendo o specifier relativo do módulo
+    # principal para apontar para o blob do core — um import relativo não
+    # resolve a partir de blob: (a URL não é hierárquica).
     three_boot = (
-        f'<script type="text/plain" id="__constelario_three_b64">{three_b64}</script>\n'
-        "<script>\n"
+        _b64_tag("__constelario_three_core_b64", three_core) + "\n"
+        + _b64_tag("__constelario_three_b64", three_main) + "\n"
+        + "<script>\n"
         "(function () {\n"
-        "  var b64 = document.getElementById('__constelario_three_b64').textContent;\n"
-        "  var bin = atob(b64), bytes = new Uint8Array(bin.length);\n"
-        "  for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);\n"
-        "  var url = URL.createObjectURL(new Blob([bytes], { type: 'text/javascript' }));\n"
-        "  import(url).then(function (m) {\n"
+        "  function decode(id) {\n"
+        "    var bin = atob(document.getElementById(id).textContent);\n"
+        "    var bytes = new Uint8Array(bin.length);\n"
+        "    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);\n"
+        "    return new TextDecoder().decode(bytes);\n"
+        "  }\n"
+        "  var coreUrl = URL.createObjectURL(new Blob([decode('__constelario_three_core_b64')], { type: 'text/javascript' }));\n"
+        "  var mainSrc = decode('__constelario_three_b64').split('./three.core.js').join(coreUrl);\n"
+        "  var mainUrl = URL.createObjectURL(new Blob([mainSrc], { type: 'text/javascript' }));\n"
+        "  import(mainUrl).then(function (m) {\n"
         "    window.THREE = m;\n"
         "    window.dispatchEvent(new Event('three-ready'));\n"
         "  });\n"
