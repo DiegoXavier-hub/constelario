@@ -228,6 +228,50 @@ def test_palette_vazia_nao_quebra():
     assert g.to_config()["types"]["X"]["color"]
 
 
+def test_from_edges_lista_de_dicts():
+    edges = [
+        {"de": "a", "para": "b", "rel": "AMIGO", "peso": 3},
+        {"de": "a", "para": "c", "rel": "AMIGO", "peso": 1},
+    ]
+    g = Graph.from_edges(edges, source="de", target="para",
+                         edge_type="rel", source_type="Pessoa")
+    cfg = g.to_config()
+    assert len(cfg["nodes"]) == 3          # a, b, c auto-criados
+    assert {n["type"] for n in cfg["nodes"]} == {"Pessoa"}
+    assert cfg["links"][0]["type"] == "AMIGO"
+    assert cfg["links"][0]["props"]["peso"] == 3   # coluna extra vira prop
+
+
+def test_from_edges_bipartido_com_tabela_de_nos():
+    edges = [{"user": "u1", "item": "i1"}, {"user": "u2", "item": "i1"}]
+    nodes = [{"item": "i1", "nome": "Espada", "cat": 5}]
+    g = Graph.from_edges(edges, source="user", target="item",
+                         source_type="Usuário", target_type="Produto",
+                         nodes=nodes, node_id="item", node_label="nome",
+                         node_community="cat")
+    by_id = {n["id"]: n for n in g.to_config()["nodes"]}
+    assert by_id["u1"]["type"] == "Usuário"
+    assert by_id["i1"]["type"] == "Produto"
+    assert by_id["i1"]["label"] == "Espada"
+    assert by_id["i1"]["community"] == 5
+
+
+def test_from_edges_csv(tmp_path):
+    csv_path = tmp_path / "arestas.csv"
+    csv_path.write_text("de,para,rel,score\na,b,SIMILAR,0.9\nb,c,SIMILAR,0.4\n",
+                        encoding="utf-8")
+    g = Graph.from_edges(str(csv_path), source="de", target="para", edge_type="rel")
+    cfg = g.to_config()
+    assert len(cfg["nodes"]) == 3
+    # score numérico coerido (não veio como string "0.9")
+    assert cfg["links"][0]["props"]["score"] == 0.9
+
+
+def test_from_edges_extensao_invalida(tmp_path):
+    with pytest.raises(ValueError, match="extensão"):
+        Graph.from_edges(str(tmp_path / "x.txt"), source="a", target="b")
+
+
 def test_from_networkx():
     nx = pytest.importorskip("networkx")
     G = nx.Graph()

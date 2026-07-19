@@ -22,7 +22,7 @@ import tempfile
 import webbrowser
 from typing import Any, Iterable, Mapping, Optional, Sequence, Union
 
-from . import _packaging
+from . import _packaging, _tabular
 from .icons import BUILTIN_ICONS
 from .model import VALID_TIERS, Edge, Node, TypeStyle, _require_str
 from .strings import DEFAULT_STRINGS
@@ -367,6 +367,121 @@ class Graph:
             data = dict(data)
             etype = str(data.pop("type", ""))
             g.add_edge(str(source), str(target), type=etype, props=data)
+        return g
+
+    @classmethod
+    def from_edges(
+        cls,
+        edges: Any,
+        *,
+        source: str,
+        target: str,
+        edge_type: Optional[str] = None,
+        edge_props: Optional[Sequence[str]] = None,
+        source_type: str = "Nó",
+        target_type: Optional[str] = None,
+        nodes: Optional[Any] = None,
+        node_id: str = "id",
+        node_label: Optional[str] = None,
+        node_type: Optional[str] = None,
+        node_community: Optional[str] = None,
+        node_props: Optional[Sequence[str]] = None,
+        title: str = "Constelário",
+        **kwargs,
+    ) -> "Graph":
+        """Cria um :class:`Graph` a partir de uma **lista de arestas** tabular.
+
+        ``edges`` pode ser um caminho ``.csv``/``.parquet``, um ``DataFrame`` do
+        pandas ou um iterável de dicionários — cada linha é uma ligação, com uma
+        coluna de origem (``source``) e uma de destino (``target``). Os nós são
+        criados automaticamente a partir dos endpoints.
+
+        Parâmetros de aresta:
+            source, target: nomes das colunas dos endpoints (obrigatórios).
+            edge_type: coluna cujo valor vira o tipo da aresta (ex.: a relação).
+            edge_props: colunas que viram ``props`` da aresta. ``None`` (padrão)
+                usa todas as colunas exceto source/target/edge_type; ``[]`` = nenhuma.
+
+        Tipagem dos nós auto-criados:
+            source_type / target_type: tipo dos nós de origem / destino (útil em
+                grafos bipartidos, ex.: "Usuário" → "Produto"). ``target_type``
+                ausente reusa ``source_type``. Cada id recebe o tipo do primeiro
+                papel em que aparece.
+
+        Tabela de nós opcional (``nodes``) — mesmo tipo de fonte de ``edges`` —
+        para dar rótulo, tipo, comunidade e propriedades aos nós:
+            node_id: coluna do identificador (casa com source/target). Padrão "id".
+            node_label: coluna do rótulo (padrão: o próprio id).
+            node_type: coluna do tipo (padrão: ``source_type``).
+            node_community: coluna da comunidade (convertida para int).
+            node_props: colunas que viram ``props`` (padrão: todas as demais).
+
+        ``**kwargs`` vai para o construtor (``theme``, ``subtitle``...).
+
+        Exemplo::
+
+            g = Graph.from_edges("ligacoes.csv", source="de", target="para",
+                                 edge_type="relacao")
+            g = Graph.from_edges(df_arestas, source="user", target="item",
+                                 source_type="Usuário", target_type="Produto",
+                                 nodes=df_itens, node_id="item", node_label="nome")
+        """
+        g = cls(title=title, **kwargs)
+        edge_rows = _tabular.read_rows(edges)
+        known: set = set()
+
+        # tipagem por papel: cada id herda o tipo do primeiro papel (origem /
+        # destino) em que aparece nas arestas. É o fallback quando a tabela de
+        # nós não tiver uma coluna de tipo — essencial no caso bipartido.
+        tgt_type = target_type or source_type
+        auto_type: dict = {}
+        for row in edge_rows:
+            s, t = row.get(source), row.get(target)
+            if s is not None:
+                auto_type.setdefault(str(s), source_type)
+            if t is not None:
+                auto_type.setdefault(str(t), tgt_type)
+
+        # 1) nós explícitos, se houver tabela de nós
+        if nodes is not None:
+            n_exclude = {node_id, node_label, node_type, node_community}
+            for row in _tabular.read_rows(nodes):
+                raw = row.get(node_id)
+                if raw is None:
+                    continue
+                nid = str(raw)
+                if nid in known:
+                    continue
+                label = str(row.get(node_label) if node_label and row.get(node_label) is not None else nid)
+                if node_type and row.get(node_type) is not None:
+                    ntype = str(row.get(node_type))
+                else:
+                    ntype = auto_type.get(nid, source_type)
+                community = row.get(node_community) if node_community else None
+                if community is not None:
+                    try:
+                        community = int(community)
+                    except (TypeError, ValueError):
+                        community = None
+                props = _tabular.pick_props(row, node_props, n_exclude)
+                g.add_node(nid, label, ntype, props=props, community=community)
+                known.add(nid)
+
+        # 2) endpoints ausentes da tabela de nós
+        for nid, ntype in auto_type.items():
+            if nid not in known:
+                g.add_node(nid, nid, ntype)
+                known.add(nid)
+
+        # 3) arestas
+        e_exclude = {source, target, edge_type}
+        for row in edge_rows:
+            s, t = row.get(source), row.get(target)
+            if s is None or t is None:
+                continue
+            etype = str(row.get(edge_type)) if edge_type and row.get(edge_type) is not None else ""
+            props = _tabular.pick_props(row, edge_props, e_exclude)
+            g.add_edge(str(s), str(t), type=etype, props=props)
         return g
 
     # ------------------------------------------------------------------
