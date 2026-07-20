@@ -15,7 +15,14 @@ import base64
 import datetime as _dt
 import json
 import math
+import warnings
 from importlib import resources
+
+# O navegador embute o grafo inteiro como uma string JSON. O V8 tem limite duro
+# de ~536 milhões de caracteres por string: acima disso a página abre EM BRANCO,
+# sem erro útil. Avisamos bem antes e barramos antes da parede.
+_WARN_CHARS = 25_000_000
+_MAX_CHARS = 200_000_000
 
 _CONFIG_OPEN = '<script id="constelario-config" type="application/json">'
 _CONFIG_CLOSE = "</script>"
@@ -132,7 +139,26 @@ def _inline_scripts() -> str:
     ])
 
 
-def render(config: dict, *, inline_js: bool = True) -> str:
+def _check_size(payload: str, config: dict, allow_huge: bool) -> None:
+    """Falha cedo (no Python, com mensagem acionável) em vez de entregar um
+    HTML que abre em branco no navegador."""
+    size = len(payload)
+    if size <= _WARN_CHARS:
+        return
+    n_nodes, n_edges = len(config.get("nodes", ())), len(config.get("links", ()))
+    resumo = (f"{n_nodes:,} nós e {n_edges:,} arestas geram um payload de "
+              f"{size / 1e6:.0f} MB").replace(",", ".")
+    dica = ("Reduza antes de exportar: filtre, agregue ou use amostragem "
+            "(ex.: manter só os nós de maior grau). Um grafo desse tamanho "
+            "também não é legível na tela.")
+    if size > _MAX_CHARS and not allow_huge:
+        raise ValueError(
+            f"grafo grande demais para um HTML único: {resumo}. {dica} "
+            "Se souber o que está fazendo, use allow_huge=True.")
+    warnings.warn(f"Constelário: {resumo}. {dica}", stacklevel=3)
+
+
+def render(config: dict, *, inline_js: bool = True, allow_huge: bool = False) -> str:
     """Gera o HTML final a partir do template + config + bibliotecas JS."""
     template = _asset_text("viewer.html")
     scripts = _inline_scripts() if inline_js else _CDN_TAGS
@@ -148,4 +174,5 @@ def render(config: dict, *, inline_js: bool = True) -> str:
     # do usuário feche o bloco <script>.
     payload = json.dumps(_sanitize(config), ensure_ascii=False,
                          allow_nan=False, default=_json_default).replace("</", "<\\/")
+    _check_size(payload, config, allow_huge)
     return html[:start] + "\n" + payload + "\n" + html[end:]

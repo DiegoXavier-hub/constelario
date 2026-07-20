@@ -682,15 +682,21 @@ class Graph:
             "stats_extra": list(self._stats_extra),
         }
 
-    def to_html(self, *, inline_js: bool = True) -> str:
+    def to_html(self, *, inline_js: bool = True, allow_huge: bool = False) -> str:
         """Retorna o HTML completo. ``inline_js=True`` (padrão) embute as
         bibliotecas JS no arquivo (funciona offline); ``False`` usa CDN com
-        integridade (arquivo ~2.6 MB menor, exige internet ao abrir)."""
-        return _packaging.render(self.to_config(), inline_js=inline_js)
+        integridade (arquivo ~2.6 MB menor, exige internet ao abrir).
 
-    def save(self, path: Union[str, os.PathLike], *, inline_js: bool = True) -> str:
+        Grafos muito grandes avisam (e, acima do limite do navegador, falham
+        com uma mensagem acionável) — ``allow_huge=True`` ignora a barreira.
+        """
+        return _packaging.render(self.to_config(), inline_js=inline_js,
+                                 allow_huge=allow_huge)
+
+    def save(self, path: Union[str, os.PathLike], *, inline_js: bool = True,
+             allow_huge: bool = False) -> str:
         """Grava o HTML em ``path`` e retorna o caminho absoluto."""
-        html = self.to_html(inline_js=inline_js)
+        html = self.to_html(inline_js=inline_js, allow_huge=allow_huge)
         path = os.path.abspath(os.fspath(path))
         with open(path, "w", encoding="utf-8") as f:
             f.write(html)

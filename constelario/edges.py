@@ -34,6 +34,20 @@ from typing import Any, Callable, List, Optional, Sequence, Union
 METRICS = ("cosine", "euclidean", "correlation", "jaccard")
 SELECTS = ("knn", "threshold", "radius")
 
+# Alvo de células por bloco no caminho vetorizado. A matriz de similaridade
+# completa seria n² (inviável: 50 mil nós = 20 GB), então processamos em blocos
+# de linhas — memória fica O(bloco × n) ≈ 40 MB em vez de O(n²).
+_CHUNK_CELLS = 5_000_000
+
+
+def _numpy():
+    """numpy é opcional: acelera ~100× as métricas numéricas quando presente."""
+    try:
+        import numpy as np  # noqa: WPS433
+        return np
+    except ImportError:
+        return None
+
 
 # ---------------------------------------------------------------------------
 # Métricas (Python puro — dimensionado para grafos de visualização)
@@ -167,47 +181,127 @@ class _Similarity(Strategy):
             return ids, data, _pearson, False
         return ids, data, _euclidean, True  # euclidean -> distância
 
-    def build(self, graph) -> List[dict]:
-        ids, data, fn, is_dist = self._pairs_data(graph)
-        n = len(ids)
-        edges: List[dict] = []
-        seen = set()
-
-        def emit(i, j, score):
-            key = (i, j) if self.directed else (min(i, j), max(i, j))
-            if not self.directed and key in seen:
+    def _emit(self, edges, seen, ids, i, j, score):
+        key = (i, j) if self.directed else (min(i, j), max(i, j))
+        if not self.directed:
+            if key in seen:
                 return
             seen.add(key)
-            edges.append({"source": ids[i], "target": ids[j], "type": self.edge_type,
-                          "props": {self.score_prop: round(score, 6)}})
+        edges.append({"source": ids[i], "target": ids[j], "type": self.edge_type,
+                      "props": {self.score_prop: round(float(score), 6)}})
 
+    # -- caminho vetorizado (numpy): matriz por blocos de linhas ------------
+    def _build_vectorized(self, ids, data, np) -> List[dict]:
+        X = np.asarray(data, dtype=float)
+        n = X.shape[0]
+        is_dist = self.metric == "euclidean"
+        if self.metric == "correlation":
+            X = X - X.mean(axis=1, keepdims=True)
+        if self.metric in ("cosine", "correlation"):
+            norms = np.linalg.norm(X, axis=1, keepdims=True)
+            norms[norms == 0] = 1.0
+            X = X / norms
+        sq = (X * X).sum(axis=1) if is_dist else None
+
+        edges: List[dict] = []
+        seen: set = set()
+        chunk = max(1, min(n, _CHUNK_CELLS // max(1, n)))
+        for start in range(0, n, chunk):
+            stop = min(n, start + chunk)
+            block = X[start:stop]
+            if is_dist:
+                # |a-b|² = |a|² + |b|² - 2·a·b (evita materializar diferenças)
+                M = sq[start:stop, None] + sq[None, :] - 2.0 * (block @ X.T)
+                np.maximum(M, 0, out=M)
+                np.sqrt(M, out=M)
+            else:
+                M = block @ X.T
+            # neutraliza a diagonal (auto-similaridade) do bloco
+            rows = np.arange(stop - start)
+            M[rows, rows + start] = np.inf if is_dist else -np.inf
+
+            if self.select == "knn":
+                k = min(self.k, n - 1)
+                if k <= 0:
+                    continue
+                part = np.argpartition(M if is_dist else -M, k - 1, axis=1)[:, :k]
+                for r in range(stop - start):
+                    for j in part[r]:
+                        self._emit(edges, seen, ids, start + r, int(j), M[r, j])
+            else:
+                lim = self.threshold if self.select == "threshold" else self.radius
+                hits = np.argwhere(M <= lim) if is_dist else np.argwhere(M >= lim)
+                for r, j in hits:
+                    i, j = start + int(r), int(j)
+                    # i<j basta: cada par não-dirigido aparece uma única vez
+                    if self.directed or i < j:
+                        self._emit(edges, seen, ids, i, j, M[int(r), j])
+        return edges
+
+    # -- Jaccard por índice invertido: só compara quem divide algum elemento -
+    def _build_jaccard(self, ids, sets) -> List[dict]:
+        inverted: dict = {}
+        for i, s in enumerate(sets):
+            for token in s:
+                inverted.setdefault(token, []).append(i)
+        shared: dict = {}
+        for members in inverted.values():
+            if len(members) < 2:
+                continue
+            for a in range(len(members)):
+                for b in range(a + 1, len(members)):
+                    key = (members[a], members[b])
+                    shared[key] = shared.get(key, 0) + 1
+
+        edges: List[dict] = []
+        seen: set = set()
+        if self.select == "knn":
+            best: dict = {}
+            for (i, j), inter in shared.items():
+                score = inter / (len(sets[i]) + len(sets[j]) - inter)
+                best.setdefault(i, []).append((score, j))
+                best.setdefault(j, []).append((score, i))
+            for i, scored in best.items():
+                scored.sort(reverse=True)
+                for score, j in scored[: self.k]:
+                    self._emit(edges, seen, ids, i, j, score)
+        else:
+            for (i, j), inter in shared.items():
+                score = inter / (len(sets[i]) + len(sets[j]) - inter)
+                if score >= self.threshold:
+                    self._emit(edges, seen, ids, i, j, score)
+        return edges
+
+    # -- fallback puro-Python (sem numpy) ----------------------------------
+    def _build_pure(self, ids, data, fn, is_dist) -> List[dict]:
+        n = len(ids)
+        edges: List[dict] = []
+        seen: set = set()
         if self.select == "knn":
             for i in range(n):
-                scored = []
-                for j in range(n):
-                    if i == j:
-                        continue
-                    s = fn(data[i], data[j])
-                    scored.append((s, j))
-                # menor distância ou maior similaridade
+                scored = [(fn(data[i], data[j]), j) for j in range(n) if j != i]
                 scored.sort(key=lambda t: t[0], reverse=not is_dist)
                 for s, j in scored[: self.k]:
-                    emit(i, j, s)
-        elif self.select == "threshold":
+                    self._emit(edges, seen, ids, i, j, s)
+        else:
+            lim = self.threshold if self.select == "threshold" else self.radius
             for i in range(n):
                 for j in range(i + 1, n):
                     s = fn(data[i], data[j])
-                    ok = (s <= self.threshold) if is_dist else (s >= self.threshold)
-                    if ok:
-                        emit(i, j, s)
-        else:  # radius (distância)
-            r = self.radius
-            for i in range(n):
-                for j in range(i + 1, n):
-                    d = fn(data[i], data[j])
-                    if d <= r:
-                        emit(i, j, d)
+                    if (s <= lim) if is_dist else (s >= lim):
+                        self._emit(edges, seen, ids, i, j, s)
         return edges
+
+    def build(self, graph) -> List[dict]:
+        ids, data, fn, is_dist = self._pairs_data(graph)
+        if not ids:
+            return []
+        if self.metric == "jaccard":
+            return self._build_jaccard(ids, data)
+        np = _numpy()
+        if np is not None:
+            return self._build_vectorized(ids, data, np)
+        return self._build_pure(ids, data, fn, is_dist)
 
 
 class _CoOccurrence(Strategy):
@@ -219,23 +313,26 @@ class _CoOccurrence(Strategy):
         self.min_shared = min_shared
 
     def build(self, graph) -> List[dict]:
-        # grupos: id -> conjunto de contextos (o valor de `by`, que pode ser
-        # escalar ou uma coleção/string delimitada = pertencer a vários grupos).
-        member_ctx = {}
+        # Índice invertido contexto -> membros. Só nós que dividem ao menos um
+        # contexto viram par, em vez de varrer todos os n² pares do grafo.
+        by_context: dict = {}
         for nid, n in graph._nodes.items():
-            ctx = _to_set(n.props.get(self.by), self.sep)
-            if ctx:
-                member_ctx[nid] = ctx
-        ids = list(member_ctx)
-        edges = []
-        for a in range(len(ids)):
-            for b in range(a + 1, len(ids)):
-                shared = member_ctx[ids[a]] & member_ctx[ids[b]]
-                if len(shared) >= self.min_shared:
-                    edges.append({"source": ids[a], "target": ids[b],
-                                  "type": self.edge_type,
-                                  "props": {self.score_prop: len(shared)}})
-        return edges
+            for ctx in _to_set(n.props.get(self.by), self.sep):
+                by_context.setdefault(ctx, []).append(nid)
+
+        shared: dict = {}
+        for members in by_context.values():
+            if len(members) < 2:
+                continue
+            for a in range(len(members)):
+                for b in range(a + 1, len(members)):
+                    x, y = members[a], members[b]
+                    key = (x, y) if x <= y else (y, x)
+                    shared[key] = shared.get(key, 0) + 1
+
+        return [{"source": x, "target": y, "type": self.edge_type,
+                 "props": {self.score_prop: count}}
+                for (x, y), count in shared.items() if count >= self.min_shared]
 
 
 class _Rule(Strategy):
@@ -313,29 +410,50 @@ class _Bipartite(Strategy):
                     if other is not None and (self.over is None or other.type == self.over):
                         neigh[a].add(b)
         ids = [i for i in neigh if neigh[i]]
+        # Índice invertido vizinho -> quem o tem: gera só os pares que de fato
+        # compartilham algum vizinho (em vez de todos os pares projetados).
+        by_neighbor: dict = {}
+        for i in ids:
+            for nb in neigh[i]:
+                by_neighbor.setdefault(nb, []).append(i)
+        inter: dict = {}
+        for holders in by_neighbor.values():
+            if len(holders) < 2:
+                continue
+            for a in range(len(holders)):
+                for b in range(a + 1, len(holders)):
+                    x, y = holders[a], holders[b]
+                    key = (x, y) if x <= y else (y, x)
+                    inter[key] = inter.get(key, 0) + 1
+
         edges, seen = [], set()
 
         def emit(i, j, score):
-            key = (min(i, j), max(i, j))
+            key = (i, j) if i <= j else (j, i)
             if key in seen:
                 return
             seen.add(key)
             edges.append({"source": i, "target": j, "type": self.edge_type,
                           "props": {self.score_prop: round(score, 6)}})
 
+        def score_of(x, y, shared):
+            return shared / (len(neigh[x]) + len(neigh[y]) - shared)
+
         if self.k:
-            for i in ids:
-                scored = [( _jaccard(neigh[i], neigh[j]), j) for j in ids if j != i]
-                scored = [t for t in scored if t[0] > 0]
+            best: dict = {}
+            for (x, y), shared in inter.items():
+                s = score_of(x, y, shared)
+                best.setdefault(x, []).append((s, y))
+                best.setdefault(y, []).append((s, x))
+            for i, scored in best.items():
                 scored.sort(reverse=True)
                 for s, j in scored[: self.k]:
                     emit(i, j, s)
         else:
-            for a in range(len(ids)):
-                for b in range(a + 1, len(ids)):
-                    s = _jaccard(neigh[ids[a]], neigh[ids[b]])
-                    if s >= self.threshold:
-                        emit(ids[a], ids[b], s)
+            for (x, y), shared in inter.items():
+                s = score_of(x, y, shared)
+                if s >= self.threshold:
+                    emit(x, y, s)
         return edges
 
 

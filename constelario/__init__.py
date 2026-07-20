@@ -17,7 +17,7 @@ from .model import Edge, Node, TypeStyle
 from .strings import DEFAULT_STRINGS
 from .theme import DEFAULT_PALETTE, Theme
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = [
     "Graph", "Theme", "Node", "Edge", "TypeStyle", "edges",
     "BUILTIN_ICONS", "DEFAULT_PALETTE", "DEFAULT_STRINGS", "LAYOUTS",

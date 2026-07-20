@@ -157,11 +157,13 @@ def test_nan_e_inf_viram_null_e_nao_quebram_json():
     g.add_node("b", "B", "Y")
     html = g.to_html(inline_js=False)
     corpo = html[html.index("constelario-config"):]
-    assert "NaN" not in corpo and "Infinity" not in corpo
-    # a config precisa continuar sendo JSON parseável
+    # isola SÓ o JSON embutido (o restante do HTML é código JS, que pode
+    # legitimamente conter as palavras NaN/Infinity)
     ini = corpo.index(">") + 1
     fim = corpo.index("</script>", ini)
-    json.loads(corpo[ini:fim].replace("<\\/", "</"))
+    payload = corpo[ini:fim]
+    assert "NaN" not in payload and "Infinity" not in payload
+    json.loads(payload.replace("<\\/", "</"))  # precisa ser JSON válido
 
 
 def test_props_tipos_exoticos_serializam(tmp_path):
@@ -345,7 +347,7 @@ def test_edges_bipartite_projection():
     g = Graph.from_edges(e, source="u", target="i",
                          source_type="Usuário", target_type="Item")
     g.connect(edges.bipartite("Usuário", over="Item", threshold=0.5))
-    proj = [l for l in g.to_config()["links"] if l["type"] == "SIMILAR"]
+    proj = [l for l in g.to_config()["links"] if l.get("type") == "SIMILAR"]
     pares = {frozenset((l["source"], l["target"])) for l in proj}
     assert frozenset(("u1", "u2")) in pares      # itens idênticos
     assert not any("u3" in p for p in pares)     # u3 não compartilha itens
@@ -376,6 +378,41 @@ def test_set_controls_sensibilidade_mouse():
     assert ctrl["slider"] is False
     with pytest.raises(ValueError):
         g.set_controls(pan_speed=0)
+
+
+def test_from_edges_dataframe_pandas_direto():
+    pd = pytest.importorskip("pandas")
+    df = pd.DataFrame({"de": ["a", "b"], "para": ["b", "c"],
+                       "rel": ["X", "X"], "peso": [1.5, 2.5]})
+    g = Graph.from_edges(df, source="de", target="para",
+                         edge_type="rel", weight="peso")
+    cfg = g.to_config()
+    assert len(cfg["nodes"]) == 3
+    assert cfg["links"][0]["props"]["peso"] == 1.5
+    # tipos nativos (não escalares numpy) já na leitura
+    assert type(cfg["links"][0]["props"]["peso"]) is float
+
+
+def test_from_table_dataframe_com_estrategia():
+    pd = pytest.importorskip("pandas")
+    df = pd.DataFrame({"id": ["a", "b", "c"], "x": [0.0, 0.1, 9.0], "y": [0.0, 0.1, 9.0]})
+    g = Graph.from_table(df, id="id", connect=edges.knn(["x", "y"], k=1,
+                                                        metric="euclidean"))
+    assert len(g.to_config()["nodes"]) == 3
+    assert len(g.to_config()["links"]) >= 1
+
+
+def test_payload_omite_campos_vazios():
+    g = Graph(title="T")
+    g.add_node("a", "A", "X")
+    g.add_edge("a", "a")
+    cfg = g.to_config()
+    no, aresta = cfg["nodes"][0], cfg["links"][0]
+    # sem props/community/icon/color/size, as chaves nem aparecem (payload enxuto)
+    for k in ("props", "community", "icon", "color", "size"):
+        assert k not in no
+    for k in ("type", "props"):
+        assert k not in aresta
 
 
 def test_from_networkx():

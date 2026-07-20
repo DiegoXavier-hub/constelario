@@ -71,16 +71,22 @@ class Node:
             raise ValueError(f"Node.size deve ser > 0 (recebido: {self.size!r})")
 
     def to_dict(self) -> dict:
-        return {
-            "id": self.id,
-            "label": self.label,
-            "type": self.type,
-            "props": dict(self.props),
-            "community": self.community,
-            "icon": self.icon,
-            "color": self.color,
-            "size": self.size,
-        }
+        # Campos vazios são OMITIDOS: em grafos grandes, emitir
+        # "community":null,"icon":null,"color":null,"size":null,"props":{}
+        # em cada nó custa ~60 bytes por nó (≈6 MB em 100 mil nós). O viewer
+        # já trata todos eles como opcionais (undefined).
+        out = {"id": self.id, "label": self.label, "type": self.type}
+        if self.props:
+            out["props"] = dict(self.props)
+        if self.community is not None:
+            out["community"] = self.community
+        if self.icon:
+            out["icon"] = self.icon
+        if self.color:
+            out["color"] = self.color
+        if self.size is not None:
+            out["size"] = self.size
+        return out
 
 
 @dataclass(frozen=True)
@@ -102,12 +108,14 @@ class Edge:
         _require_str(self.target, "Edge.target")
 
     def to_dict(self) -> dict:
-        return {
-            "source": self.source,
-            "target": self.target,
-            "type": self.type,
-            "props": dict(self.props),
-        }
+        # Mesmo motivo do Node: tipo vazio e props vazias não vão para o JSON
+        # (≈22 bytes por aresta — dezenas de MB em bases com milhões de linhas).
+        out = {"source": self.source, "target": self.target}
+        if self.type:
+            out["type"] = self.type
+        if self.props:
+            out["props"] = dict(self.props)
+        return out
 
 
 @dataclass(frozen=True)

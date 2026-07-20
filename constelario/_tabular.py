@@ -60,11 +60,24 @@ def _read_parquet(path: str) -> List[dict]:
         )
 
 
+def _read_dataframe(df) -> List[dict]:
+    """DataFrame -> linhas, por coluna.
+
+    ``Series.tolist()`` desce ao C do pandas e já devolve tipos nativos do
+    Python — bem mais rápido que ``to_dict('records')`` e, de quebra, evita
+    escalares numpy (``float64``/``int64``) que depois custariam conversão na
+    serialização JSON.
+    """
+    cols = list(df.columns)
+    columns = [df[c].tolist() for c in cols]
+    return [dict(zip(cols, values)) for values in zip(*columns)]
+
+
 def read_rows(source: Any) -> List[dict]:
     """Normaliza ``source`` para uma ``list[dict]`` (uma linha por dicionário)."""
     # DataFrame do pandas (detectado por pato, sem importar pandas à toa)
     if hasattr(source, "to_dict") and hasattr(source, "columns"):
-        return source.to_dict(orient="records")
+        return _read_dataframe(source)
     if isinstance(source, (str, os.PathLike)):
         path = os.fspath(source)
         ext = os.path.splitext(path)[1].lower()

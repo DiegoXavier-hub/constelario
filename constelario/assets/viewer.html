@@ -245,7 +245,17 @@
   // ---------------------------------------------------------------------
   // Configuração (gerada pelo Python) e utilitários
   // ---------------------------------------------------------------------
-  const CFG = JSON.parse(document.getElementById('constelario-config').textContent);
+  let CFG;
+  try {
+    CFG = JSON.parse(document.getElementById('constelario-config').textContent);
+  } catch (err) {
+    // Sem isto o navegador só mostraria uma página preta e muda.
+    document.body.innerHTML = '<pre style="padding:2rem;font:14px monospace;color:#ecdfc2">' +
+      'Constelário: não foi possível carregar o grafo (' + err.name + ').\n' +
+      'O conteúdo embutido excede o limite do navegador — gere o arquivo com\n' +
+      'menos nós/arestas (filtre, agregue ou use amostragem).</pre>';
+    throw err;
+  }
   const S = CFG.strings, TYPES = CFG.types, ICONS = CFG.icons, UI = CFG.ui;
   const DATA = { nodes: CFG.nodes, links: CFG.links };
   const nodeById = {}; DATA.nodes.forEach(n => nodeById[n.id] = n);
@@ -300,6 +310,20 @@
   hideIf(CFG.layouts.enabled.length < 2, 'sb-layouts');
   hideIf(!(CFG.controls && CFG.controls.slider), 'sb-controls');
 
+  // Min/max por laço: Math.max(...arr) e Math.max.apply(null, arr) passam o
+  // array como ARGUMENTOS e estouram a pilha (~65k+ itens). Em grafos grandes
+  // isso quebraria a página inteira, então nunca usamos spread/apply aqui.
+  function maxOf(values, fallback) {
+    let m = -Infinity;
+    for (let i = 0; i < values.length; i++) { const v = values[i]; if (v > m) m = v; }
+    return m === -Infinity ? fallback : m;
+  }
+  function minOf(values, fallback) {
+    let m = Infinity;
+    for (let i = 0; i < values.length; i++) { const v = values[i]; if (v < m) m = v; }
+    return m === Infinity ? fallback : m;
+  }
+
   // ---------------------------------------------------------------------
   // Grau (tamanho do nó proporcional às arestas; node.size sobrepõe)
   // ---------------------------------------------------------------------
@@ -307,7 +331,7 @@
   DATA.nodes.forEach(n => degree[n.id] = 0);
   DATA.links.forEach(l => { degree[l.source] = (degree[l.source] || 0) + 1;
                              degree[l.target] = (degree[l.target] || 0) + 1; });
-  const maxDegree = Math.max(1, ...Object.values(degree));
+  const maxDegree = Math.max(1, maxOf(Object.values(degree), 1));
   function nodeSize(id) {
     const n = nodeById[id];
     if (n && n.size != null) return n.size;
@@ -393,7 +417,7 @@
   if (EW) {
     const vals = DATA.links.map(l => l.props && typeof l.props[EW.prop] === 'number' ? l.props[EW.prop] : null)
       .filter(v => v !== null);
-    if (vals.length) { ewMin = Math.min.apply(null, vals); ewMax = Math.max.apply(null, vals); }
+    if (vals.length) { ewMin = minOf(vals, 0); ewMax = maxOf(vals, 1); }
   }
   function ewFrac(l) {
     const v = l.props ? l.props[EW.prop] : null;
@@ -541,7 +565,7 @@
       }
     });
     const K = clusters.length;
-    const maxR3 = Math.max.apply(null, clusters.map(c => c.R3));
+    const maxR3 = maxOf(clusters.map(c => c.R3), 55);
     const RS = Math.max(320, (2 * maxR3 + 130) * Math.sqrt(Math.max(1, K)) / 3.6);
     const p2 = {}, p3 = {};
     clusters.forEach((c, i) => {
@@ -983,7 +1007,7 @@
       const otherId = l.source === id ? l.target : l.source;
       const other = nodeById[otherId];
       return { id: otherId, label: other ? shortLabel(other) : otherId,
-               rel: l.type, dir: l.source === id ? '→' : '←' };
+               rel: l.type || '', dir: l.source === id ? '→' : '←' };
     });
   }
   function showNodeInfo(id) {
