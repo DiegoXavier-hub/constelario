@@ -104,6 +104,9 @@
   .legend-row .lcount{color:var(--muted);font-family:var(--mono);font-size:11px}
   #legend-controls label{font-size:11px;color:var(--muted);display:flex;gap:5px;align-items:center;cursor:pointer}
 
+  /* ---- slider de sensibilidade do mouse (3D) ---- */
+  #sensitivity{width:100%;accent-color:var(--gold);cursor:pointer;background:transparent}
+
   /* ---- seletor de organização espacial ---- */
   #layout-picker{display:flex;flex-direction:column;gap:4px}
   .lay-opt{padding:7px 11px;border-radius:8px;border:1px solid transparent;cursor:pointer;
@@ -206,6 +209,11 @@
     <div id="layout-picker"></div>
   </div>
 
+  <div id="sb-controls">
+    <h3><span id="controls-title"></span> <span class="hint-small" id="controls-value"></span></h3>
+    <input id="sensitivity" type="range" min="0.2" max="2.5" step="0.05" value="1">
+  </div>
+
   <div id="sb-inspect">
     <h3><span id="inspect-title"></span> <span class="hint-small" id="inspect-hint"></span></h3>
     <div id="info-content"></div>
@@ -274,6 +282,7 @@
   document.getElementById('inspect-title').textContent = S.inspect_title;
   document.getElementById('inspect-hint').textContent = S.inspect_hint;
   document.getElementById('info-content').innerHTML = `<span class="empty">${escapeHtml(S.inspect_empty)}</span>`;
+  document.getElementById('controls-title').textContent = S.controls_title;
   document.getElementById('legend-title').textContent = S.legend_title;
   document.getElementById('legend-all').textContent = S.legend_all;
   document.getElementById('communities-title').textContent = S.communities_title;
@@ -289,6 +298,7 @@
   const anyCommunity = DATA.nodes.some(n => n.community !== null && n.community !== undefined);
   hideIf(!(UI.communities_panel && anyCommunity), 'sb-communities');
   hideIf(CFG.layouts.enabled.length < 2, 'sb-layouts');
+  hideIf(!(CFG.controls && CFG.controls.slider), 'sb-controls');
 
   // ---------------------------------------------------------------------
   // Grau (tamanho do nó proporcional às arestas; node.size sobrepõe)
@@ -728,8 +738,23 @@
       .onNodeClick(n => { showNodeInfo(n.id); focusNode3D(n); })
       .onNodeHover(n => { container3d.style.cursor = n ? 'pointer' : 'default'; });
     applyMedallionSprites();
+    applyControlSpeeds();
     graph3d.cameraPosition({ x: 0, y: 0, z: 1100 });
     sizeGraph3D();
+  }
+
+  // Sensibilidade do mouse: as velocidades-base vêm da config e são escaladas
+  // pelo slider. Só atribui as propriedades que existirem no controle atual
+  // (TrackballControls por padrão; Orbit/Fly expõem nomes diferentes).
+  const CTRL = CFG.controls || { rotate: 0.5, zoom: 0.7, pan: 0.2, sensitivity: 1 };
+  let sensitivity = CTRL.sensitivity;
+  function applyControlSpeeds() {
+    if (!graph3d || typeof graph3d.controls !== 'function') return;
+    const c = graph3d.controls();
+    if (!c) return;
+    if ('rotateSpeed' in c) c.rotateSpeed = CTRL.rotate * sensitivity;
+    if ('zoomSpeed' in c) c.zoomSpeed = CTRL.zoom * sensitivity;
+    if ('panSpeed' in c) c.panSpeed = CTRL.pan * sensitivity;
   }
 
   // O three chega assíncrono (module/blob). Esta função é idempotente e
@@ -850,6 +875,20 @@
         if (mode === '2d' && network) network.fit({ animation: true });
         if (mode === '3d' && graph3d && graph3d.zoomToFit) graph3d.zoomToFit(700, 60);
       });
+    });
+  })();
+
+  // Slider de sensibilidade do mouse (afeta rotação/zoom/arrasto no 3D)
+  (function bindSensitivity() {
+    const el = document.getElementById('sensitivity');
+    const out = document.getElementById('controls-value');
+    el.value = String(sensitivity);
+    const show = () => { out.textContent = Number(sensitivity).toFixed(2) + '×'; };
+    show();
+    el.addEventListener('input', () => {
+      sensitivity = parseFloat(el.value) || 1;
+      show();
+      applyControlSpeeds();
     });
   })();
 

@@ -62,6 +62,11 @@ class Graph:
         self._stats_extra: "list[dict]" = []
         self._strings: "dict[str, str]" = {}
         self._edge_weight: "Optional[dict]" = None
+        # Velocidades do mouse no 3D. Os defaults do TrackballControls
+        # (rotate 1.0 / zoom 1.2 / pan 0.3) são agressivos em telas grandes;
+        # aqui o padrão já nasce calmo e o usuário ajusta pelo slider.
+        self._controls = {"rotate": 0.5, "zoom": 0.7, "pan": 0.2,
+                          "sensitivity": 1.0, "slider": True}
         self._node_size = {"min": 7.0, "max": 46.0}
         self._layouts = {"default": "constel", "enabled": list(LAYOUTS),
                          "sync_community_color": True}
@@ -265,6 +270,31 @@ class Graph:
                              f"min={min_width}, max={max_width}")
         self._edge_weight = {"prop": prop, "min": float(min_width),
                              "max": float(max_width), "opacity": bool(scale_opacity)}
+        return self
+
+    def set_controls(self, *, rotate_speed: Optional[float] = None,
+                     zoom_speed: Optional[float] = None,
+                     pan_speed: Optional[float] = None,
+                     sensitivity: Optional[float] = None,
+                     slider: Optional[bool] = None) -> "Graph":
+        """Ajusta a sensibilidade do mouse na visualização 3D.
+
+        ``pan_speed`` é o arrasto com o **botão direito**, ``rotate_speed`` o
+        arrasto com o esquerdo e ``zoom_speed`` a roda. ``sensitivity`` é um
+        multiplicador global aplicado sobre os três (é a posição inicial do
+        slider "Sensibilidade do mouse" da barra lateral; ``slider=False``
+        esconde esse controle).
+        """
+        for key, val in (("rotate", rotate_speed), ("zoom", zoom_speed),
+                         ("pan", pan_speed), ("sensitivity", sensitivity)):
+            if val is None:
+                continue
+            val = float(val)
+            if val <= 0:
+                raise ValueError(f"{key}: velocidade deve ser > 0 (recebido: {val})")
+            self._controls[key] = val
+        if slider is not None:
+            self._controls["slider"] = bool(slider)
         return self
 
     def connect(self, strategy) -> "Graph":
@@ -643,6 +673,7 @@ class Graph:
             "edge_weight": dict(self._edge_weight) if self._edge_weight else None,
             "color_modes": list(self._color_modes),
             "node_size": dict(self._node_size),
+            "controls": dict(self._controls),
             "layouts": dict(self._layouts),
             "ui": dict(self._ui),
             "panels": list(self._panels),

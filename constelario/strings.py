@@ -21,6 +21,8 @@ DEFAULT_STRINGS: dict = {
     "layout_layers_desc": "colunas por tipo de nó, fluxo da esquerda p/ direita",
     "layout_spiral": "Espiral · Globo",
     "layout_spiral_desc": "espiral áurea no 2D, globo no 3D",
+    # sensibilidade do mouse (3D)
+    "controls_title": "Sensibilidade do mouse",
     # inspetor
     "inspect_title": "Inspecionar",
     "inspect_hint": "clique num nó",

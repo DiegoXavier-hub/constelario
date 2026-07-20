@@ -366,6 +366,18 @@ def test_from_edges_weight_ativa_edge_weight():
     assert g.to_config()["edge_weight"]["prop"] == "peso"
 
 
+def test_set_controls_sensibilidade_mouse():
+    g = grafo_minimo()
+    ctrl = g.to_config()["controls"]
+    assert ctrl["pan"] < 0.3 and ctrl["rotate"] < 1.0     # nasce calmo
+    g.set_controls(pan_speed=0.05, sensitivity=0.5, slider=False)
+    ctrl = g.to_config()["controls"]
+    assert ctrl["pan"] == 0.05 and ctrl["sensitivity"] == 0.5
+    assert ctrl["slider"] is False
+    with pytest.raises(ValueError):
+        g.set_controls(pan_speed=0)
+
+
 def test_from_networkx():
     nx = pytest.importorskip("networkx")
     G = nx.Graph()
